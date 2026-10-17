@@ -1,0 +1,42 @@
+{
+  "name": "dubvibe_mini",
+  "version": "0.0.3",
+  "private": true,
+  "type": "module",
+  "workspaces": ["apps/host", "packages/sdk", "packages/builtin"],
+  "engines": { "node": ">=22.13.0" },
+  "license": "Apache-2.0",
+  "scripts": {
+    "build:desktop": "node scripts/build-desktop.mjs",
+    "build:mac": "node scripts/build-mac.mjs",
+    "build:windows": "node scripts/build-windows.mjs",
+    "test:windows": "node scripts/smoke-windows.mjs",
+    "test:release": "node --test scripts/release-version.test.mjs scripts/download-releases.test.mjs",
+    "dev:api": "node --import tsx apps/host/src/main.ts",
+    "start": "node --import tsx apps/host/src/main.ts",
+    "plugins": "node --import tsx apps/host/src/plugins.ts",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test packages/*/test/*.test.ts",
+    "dev:web": "npm --prefix apps/web run dev",
+    "build:plugins": "npm --prefix apps/web run plugins:build",
+    "test:backend": "node scripts/test-backend.mjs",
+    "lint:web": "npm --prefix apps/web run lint",
+    "build:web": "npm --prefix apps/web run build"
+  },
+  "dependencies": {
+    "cordis": "4.0.0-rc.10",
+    "@cordisjs/plugin-loader": "1.0.0-rc.7",
+    "@cordisjs/plugin-include": "1.1.0",
+    "ajv": "8.17.1",
+    "busboy": "1.6.0",
+    "dotenv": "16.6.1",
+    "undici": "7.30.0"
+  },
+  "devDependencies": {
+    "@types/node": "22.18.6",
+    "@types/busboy": "1.5.4",
+    "esbuild": "0.25.10",
+    "tsx": "4.20.6",
+    "typescript": "5.9.3"
+  }
+}
