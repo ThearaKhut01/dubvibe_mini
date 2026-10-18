@@ -11,7 +11,7 @@ export interface EnvironmentConfig { root: string; repoRoot: string; python: str
 export function platformTarget(platform = process.platform, arch = process.arch) {
   const targets: Record<string, string> = { 'darwin-arm64': 'aarch64-apple-darwin', 'darwin-x64': 'x86_64-apple-darwin', 'linux-arm64': 'aarch64-unknown-linux-gnu', 'linux-x64': 'x86_64-unknown-linux-gnu', 'win32-x64': 'x86_64-pc-windows-msvc' }
   const target = targets[`${platform}-${arch}`]
-  if (!target) throw new Error(`暂不支持 ${platform} / ${arch}，支持 macOS、Linux 的 arm64/x64 和 Windows x64。`)
+  if (!target) throw new Error(`${platform} / ${arch} is not supported; macOS and Linux arm64/x64 and Windows x64 are supported.`)
   return target
 }
 export async function executable(name: string) {
@@ -27,10 +27,10 @@ export async function executable(name: string) {
 export class EnvironmentSetup {
   steps: EnvironmentStep[] = [
     { id: 'python', name: 'Python 3.12', status: 'pending' },
-    { id: 'acceleration', name: 'GPU 与推理后端', status: 'pending' },
-    { id: 'dependencies', name: '运行依赖', status: 'pending' },
+    { id: 'acceleration', name: 'GPU and inference backend', status: 'pending' },
+    { id: 'dependencies', name: 'Runtime dependencies', status: 'pending' },
     { id: 'ffmpeg', name: 'FFmpeg', status: 'pending' },
-    { id: 'resources', name: '分句资源', status: 'pending' },
+    { id: 'resources', name: 'Sentence-split data', status: 'pending' },
   ]
   private accelerationPlan?: { backend: string; detail: string; version: string; codec: string; index: string; installed: boolean; packages: string[]; prerequisites: string[] }
   constructor(private ctx: Context, readonly config: EnvironmentConfig, private client: DownloadClient, private signal: AbortSignal) {}
@@ -45,19 +45,19 @@ export class EnvironmentSetup {
   private async releaseAsset(repo: string, tag: string, name: string) {
     const release = await this.client.json(`https://api.github.com/repos/${repo}/releases/tags/${tag}`, this.signal)
     const asset = release.assets?.find((item: any) => item.name === name)
-    if (!asset?.digest?.startsWith('sha256:')) throw new Error(`下载清单缺少 SHA-256：${repo}/${tag}/${name}`)
+    if (!asset?.digest?.startsWith('sha256:')) throw new Error(`The download manifest is missing its SHA-256 digest: ${repo}/${tag}/${name}`)
     return { path: name, url: asset.browser_download_url as string, size: asset.size as number, sha256: asset.digest.slice(7) as string }
   }
   private async pythonEnvironment() {
     const environment = dirname(dirname(this.config.python))
     if (!await fileSize(this.config.python)) {
-      if (readEnv('PYTHON')?.trim()) throw new Error(`DUBVIBE_MINI_PYTHON 不存在：${this.config.python}`)
+      if (readEnv('PYTHON')?.trim()) throw new Error(`DUBVIBE_MINI_PYTHON does not exist: ${this.config.python}`)
       const systemPython = await executable(process.platform === 'win32' ? 'python' : 'python3.12')
       let compatible = false
       if (systemPython) {
         const version = await this.run(systemPython, ['-c', 'import sys; print(".".join(map(str, sys.version_info[:2])))'])
         compatible = version.stdout.trim() === '3.12'
-        if (!compatible) this.ctx.logger.info(`检测到 Python ${version.stdout.trim()}，准备应用专用 Python 3.12。`)
+        if (!compatible) this.ctx.logger.info(`Detected Python ${version.stdout.trim()}; preparing the bundled Python 3.12.`)
       }
       if (systemPython && compatible) {
         await this.run(systemPython, ['-m', 'venv', environment])
@@ -94,7 +94,7 @@ export class EnvironmentSetup {
         ...(plan.packages.length ? plan.packages : [`torch==${plan.version}`, `torchaudio==${plan.version}`])])
     }
     const status = await this.probe('acceleration')
-    return status.backend === plan.backend ? status.detail : `${plan.detail}；${status.detail}`
+    return status.backend === plan.backend ? status.detail : `${plan.detail}; ${status.detail}`
   }
   private async dependencies() {
     const { missing } = await this.probe('dependencies')
@@ -110,12 +110,12 @@ export class EnvironmentSetup {
         if (!/No matching distribution found|Could not find a version that satisfies/.test(message)) throw error
         // Only a missing mirror package permits this explicit, recorded mirror change.
         this.ctx.logger.warn(message)
-        this.steps.find(step => step.id === 'dependencies')!.detail = '阿里云缺少依赖，改用清华源安装'
+        this.steps.find(step => step.id === 'dependencies')!.detail = 'Aliyun mirror lacks the dependencies; switching to the Tsinghua mirror'
         args[args.indexOf('https://mirrors.aliyun.com/pypi/simple/')] = 'https://pypi.tuna.tsinghua.edu.cn/simple/'
         await this.python(args)
       }
       const remaining = (await this.probe('dependencies')).missing
-      if (remaining.length) throw new Error(`依赖安装后仍未满足：${remaining.join(', ')}`)
+      if (remaining.length) throw new Error(`Dependencies are still unsatisfied after installation: ${remaining.join(', ')}`)
     }
     if (!await fileSize(join(this.config.repoRoot, 'submodule', 'demucs', 'demucs', '__init__.py'))) {
       await this.run('git', ['submodule', 'update', '--init', '--recursive', 'submodule/demucs'])
@@ -137,8 +137,8 @@ export class EnvironmentSetup {
         const subtitles = name !== 'ffmpeg' || /\bsubtitles\b/.test(result.stdout)
         const shared = !windows || (await readdir(dirname(path))).some(file => /^av.*\.dll$/i.test(file))
         if (subtitles && shared) { paths[envKey] = path; continue }
-        if (explicit) throw new Error(`${envKey} 需要支持 subtitles${windows ? ' 和共享 av*.dll' : ''}：${path}`)
-        this.ctx.logger.info(`${path} 缺少所需能力，安装应用专用 FFmpeg。`)
+        if (explicit) throw new Error(`${envKey} must support subtitles${windows ? ' and shared av*.dll' : ''}: ${path}`)
+        this.ctx.logger.info(`${path} lacks required capabilities; installing the bundled FFmpeg.`)
       }
       await mkdir(directory, { recursive: true })
       if (windows) {
@@ -152,7 +152,7 @@ export class EnvironmentSetup {
         await chmod(managed, 0o700)
       }
       const result = await this.run(managed, name === 'ffmpeg' ? ['-hide_banner', '-filters'] : ['-version'])
-      if (name === 'ffmpeg' && !/\bsubtitles\b/.test(result.stdout)) throw new Error(`下载的 FFmpeg 缺少 subtitles：${managed}`)
+      if (name === 'ffmpeg' && !/\bsubtitles\b/.test(result.stdout)) throw new Error(`The downloaded FFmpeg lacks subtitles: ${managed}`)
       paths[envKey] = managed
     }
     Object.assign(process.env, paths)
@@ -173,7 +173,7 @@ export class EnvironmentSetup {
       await this.client.download(asset, archive, this.signal, () => {})
       await this.python(['-m', 'zipfile', '-e', archive, folder])
     }
-    if (!(await this.probe('punkt')).ready) throw new Error('Whisper 英文分句资源安装后未通过检查。')
+    if (!(await this.probe('punkt')).ready) throw new Error('Whisper English sentence data failed verification after installation.')
   }
   async prepare() {
     platformTarget()

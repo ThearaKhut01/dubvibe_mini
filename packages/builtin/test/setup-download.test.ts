@@ -41,7 +41,7 @@ test('resumes an existing partial file, verifies hash, and reuses the verified r
 test('checksum failures remain errors, never publish the final model, and do not retry', async t => {
   let requests = 0
   const { client, file, target } = await fixture(t, (_request, response) => { requests++; response.end(Buffer.alloc(data.length, 1)) })
-  await assert.rejects(client.download(file, target, new AbortController().signal, () => {}), /下载校验失败/)
+  await assert.rejects(client.download(file, target, new AbortController().signal, () => {}), /Download verification failed/)
   assert.equal(await fileSize(target), 0)
   assert.equal(await fileSize(target + '.part'), data.length)
   assert.equal(requests, 1)
@@ -50,7 +50,7 @@ test('checksum failures remain errors, never publish the final model, and do not
 test('a server ignoring Range fails without truncating the saved partial download', async t => {
   const { client, file, target } = await fixture(t, (_request, response) => response.end(data))
   await writeFile(target + '.part', data.subarray(0, 7))
-  await assert.rejects(client.download(file, target, new AbortController().signal, () => {}), /未接受断点/)
+  await assert.rejects(client.download(file, target, new AbortController().signal, () => {}), /rejected resume offset/)
   assert.equal(await fileSize(target + '.part'), 7)
   assert.equal(await fileSize(target), 0)
 })
@@ -78,5 +78,5 @@ test('OS/architecture chooses native installers and rejects unsupported platform
   assert.equal(platformTarget('linux', 'arm64'), 'aarch64-unknown-linux-gnu')
   assert.equal(platformTarget('linux', 'x64'), 'x86_64-unknown-linux-gnu')
   assert.equal(platformTarget('win32', 'x64'), 'x86_64-pc-windows-msvc')
-  assert.throws(() => platformTarget('win32', 'arm64'), /暂不支持/)
+  assert.throws(() => platformTarget('win32', 'arm64'), /is not supported/)
 })

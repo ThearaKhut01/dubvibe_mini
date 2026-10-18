@@ -5,12 +5,12 @@ import { SetupScreen, type SetupState, type SetupAction } from '@/components/set
 // Design-only fixture. The application root reads real progress from /api/setup.
 function fixture(started = true): SetupState {
   return { phase: 'models', platform: 'darwin', arch: 'arm64', canRetry: true, token: '',
-    environment: ['Python 3.12', '运行依赖', 'FFmpeg', '分句资源'].map(name => ({ id: name, name, status: 'ready' })),
+    environment: ['Python 3.12', 'Runtime dependencies', 'FFmpeg', 'Sentence-split data'].map(name => ({ id: name, name, status: 'ready' })),
     models: [
-      { id: 'whisper', name: 'Whisper', variant: 'tiny', purpose: '语音识别', total: 75_572_083, speed: 3_200_000, initial: 1 },
-      { id: 'voxcpm', name: 'VoxCPM2', variant: '', purpose: '声音克隆', total: 4_960_722_408, speed: 24_600_000, initial: 0.42 },
-      { id: 'demucs', name: 'Demucs', variant: 'htdemucs', purpose: '人声分离', total: 84_141_911, speed: 1_400_000, initial: 0.76 },
-      { id: 'qwen', name: 'Qwen3 Aligner', variant: '0.6B', purpose: '字幕对齐', total: 1_847_225_867, speed: 9_800_000, initial: 0.28 },
+      { id: 'whisper', name: 'Whisper', variant: 'tiny', purpose: 'Speech recognition', total: 75_572_083, speed: 3_200_000, initial: 1 },
+      { id: 'voxcpm', name: 'VoxCPM2', variant: '', purpose: 'Voice cloning', total: 4_960_722_408, speed: 24_600_000, initial: 0.42 },
+      { id: 'demucs', name: 'Demucs', variant: 'htdemucs', purpose: 'Vocal separation', total: 84_141_911, speed: 1_400_000, initial: 0.76 },
+      { id: 'qwen', name: 'Qwen3 Aligner', variant: '0.6B', purpose: 'Subtitle alignment', total: 1_847_225_867, speed: 9_800_000, initial: 0.28 },
     ].map(({ initial, ...model }) => ({ ...model, status: !started ? 'paused' : initial === 1 ? 'ready' : 'downloading', received: started ? Math.floor(model.total * initial) : 0, speed: started && initial < 1 ? model.speed : 0 })),
   }
 }

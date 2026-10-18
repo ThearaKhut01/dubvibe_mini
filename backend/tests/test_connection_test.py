@@ -16,7 +16,7 @@ def bridge():
 
 def test_missing_key_never_contacts_provider(bridge, monkeypatch):
     monkeypatch.setattr(openai, 'OpenAI', lambda **kwargs: pytest.fail('must not contact provider'))
-    with pytest.raises(WorkerError, match='API 密钥'):
+    with pytest.raises(WorkerError, match='API key'):
         check_connection({'base_url': 'https://example.test/v1', 'model': 'test'}, bridge)
 
 

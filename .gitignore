@@ -200,3 +200,4 @@ apps/web/public/examples/
 
 # Local editor settings
 .vscode/
+debug-mix-work/

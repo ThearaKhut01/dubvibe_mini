@@ -72,7 +72,7 @@ export default class SetupService extends Service {
     this.ctx.effect(() => this.ctx.http.register('POST', '/api/setup/models/:id', async request => {
       const id = request.params!.id!
       if (!modelManifest.some(item => item.id === id)) throw new AppError('NOT_FOUND', 'Unknown model.', 404)
-      if (this.phase === 'environment' || this.phase === 'starting') throw new AppError('ENVIRONMENT_NOT_READY', '请等待环境准备完成。', 409)
+      if (this.phase === 'environment' || this.phase === 'starting') throw new AppError('ENVIRONMENT_NOT_READY', 'Wait for environment preparation to finish.', 409)
       const { action = 'start' } = await readJson(request)
       if (!['start', 'pause'].includes(action)) throw new AppError('INVALID_INPUT', 'Invalid model download action.', 422)
       if (action === 'pause') {
@@ -85,12 +85,12 @@ export default class SetupService extends Service {
     this.ctx.effect(() => this.ctx.http.register('POST', '/api/setup', async request => {
       const { action, id } = await readJson(request)
       if (!['pause', 'resume', 'retry'].includes(action) || (id !== undefined && !this.models.some(model => model.id === id))) throw new AppError('INVALID_INPUT', 'Invalid setup action or model.', 422)
-      if (this.phase === 'ready' || this.phase === 'starting') throw new AppError('SETUP_FINISHED', '环境准备已结束。', 409)
+      if (this.phase === 'ready' || this.phase === 'starting') throw new AppError('SETUP_FINISHED', 'Environment preparation has finished.', 409)
       if (action === 'retry' && !id && this.phase === 'failed') {
-        if (this.bootAttempted) throw new AppError('RESTART_REQUIRED', '工作台启动失败，请查看错误后重启应用。', 409)
+        if (this.bootAttempted) throw new AppError('RESTART_REQUIRED', 'The workspace failed to start; review the error and restart the app.', 409)
         this.prepare()
       } else {
-        if (this.phase !== 'models') throw new AppError('ENVIRONMENT_NOT_READY', '请等待环境准备完成。', 409)
+        if (this.phase !== 'models') throw new AppError('ENVIRONMENT_NOT_READY', 'Wait for environment preparation to finish.', 409)
         const targets = this.models.filter(model => (!id || model.id === id) && model.status !== 'ready')
         if (action === 'pause') {
           for (const model of targets) {
@@ -121,7 +121,7 @@ export default class SetupService extends Service {
   private guard(request: HttpRequest) {
     const host = new URL(`http://${request.raw.headers.host || 'invalid'}`).hostname
     const origin = request.raw.headers.origin
-    if (!loopback(request.raw.socket.remoteAddress || '') || !loopback(host) || (origin && !loopback(new URL(origin).hostname))) throw new AppError('LOCAL_SETUP_ONLY', '首次环境准备仅允许本机访问。', 403)
+    if (!loopback(request.raw.socket.remoteAddress || '') || !loopback(host) || (origin && !loopback(new URL(origin).hostname))) throw new AppError('LOCAL_SETUP_ONLY', 'First-run environment preparation is only allowed from this machine.', 403)
     if (!['GET', 'HEAD'].includes(request.raw.method || '')) {
       const supplied = Buffer.from(String(request.raw.headers['x-dubvibe_mini-setup'] || ''))
       const expected = Buffer.from(this.token)
@@ -207,7 +207,7 @@ export default class SetupService extends Service {
       for (const entry of this.config.entries) await this.ctx.loader.create(entry)
       await this.ctx.loader.await()
       const unavailable = [...this.ctx.loader.entries()].filter(entry => !entry.disabled && (!entry.fiber || entry.fiber.state !== 2))
-      if (unavailable.length) throw new Error(`工作台插件启动失败：${unavailable.map(entry => entry.options.id).join(', ')}`)
+      if (unavailable.length) throw new Error(`Workspace plugins failed to start: ${unavailable.map(entry => entry.options.id).join(', ')}`)
       this.ctx.emit('app/ready')
       this.phase = 'ready'
     })().catch(error => this.fail(error)).finally(() => { this.finishing = undefined })

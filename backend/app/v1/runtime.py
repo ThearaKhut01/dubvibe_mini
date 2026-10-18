@@ -52,37 +52,37 @@ def _model(
 
 def _whisper_models(devices: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], str | None]:
     if importlib.util.find_spec("whisper") is None or importlib.util.find_spec("torch") is None:
-        return [], "本地 Whisper 需要安装 openai-whisper 和 torch。"
+        return [], "Local Whisper requires the openai-whisper and torch packages."
     if importlib.util.find_spec("nltk") is None:
-        return [], "Whisper 英文分句需要安装 nltk==3.10.3 和 punkt_tab 数据。"
+        return [], "Whisper English sentence splitting requires nltk==3.10.3 and the punkt_tab data."
     from nltk.data import find
 
     try:
         punkt = Path(str(find("tokenizers/punkt_tab/english/")))
     except LookupError:
-        return [], "缺少 Whisper 英文分句数据；请运行 .venv/bin/python -m nltk.downloader punkt_tab。"
+        return [], "Whisper English sentence data is missing; run .venv/Scripts/python -m nltk.downloader punkt_tab."
     if any(not (punkt / name).is_file() or (punkt / name).stat().st_size == 0 for name in (
         "collocations.tab", "sent_starters.txt", "abbrev_types.txt", "ortho_context.tab",
     )):
-        return [], "Whisper 英文 punkt_tab 数据不完整；请重新安装 punkt_tab。"
+        return [], "The Whisper English punkt_tab data is incomplete; reinstall punkt_tab."
     if shutil.which(ffmpeg_binary()) is None or shutil.which(ffprobe_binary()) is None:
-        return [], "本地媒体处理需要可执行的 FFmpeg 和 FFprobe。"
+        return [], "Local media processing requires executable FFmpeg and FFprobe."
     # Whisper's own load_audio invokes `ffmpeg` by name, independently of the
     # application's configured binary paths used by prepare/export.
     if shutil.which("ffmpeg") is None:
-        return [], "Whisper ASR 还需要 PATH 中可执行的 ffmpeg；仅配置 FFMPEG_PATH 不足以读取音频。"
+        return [], "Whisper ASR also needs an ffmpeg executable on PATH; configuring FFMPEG_PATH alone is not enough to read audio."
     from .asr import available_models
 
     # OpenAI Whisper stores sparse alignment heads; MPS cannot move these
     # buffers. Keep its ASR on CPU while other providers can use Apple MPS.
     available_devices = [device["id"] for device in devices if device["available"] and device["id"] != "mps"]
     if not available_devices:
-        return [], "没有可执行 Whisper 的 CPU/CUDA/ROCm 设备。"
+        return [], "No CPU/CUDA/ROCm device can run Whisper."
     models = [_model(
         name, available_devices.copy(), ["auto", "en"] if name.endswith(".en") else ["auto", *LANGUAGES], [],
         max_audio_duration_ms=RUNTIME_LIMITS["max_video_duration_ms"],
     ) for name in available_models()]
-    return models, None if models else "未找到非空的本地 Whisper .pt 权重；请安装到 Whisper 模型目录。"
+    return models, None if models else "No non-empty local Whisper .pt checkpoints found; install them into the Whisper models directory."
 
 
 # OpenAI-compatible remote translation adapters. Gemini exposes an OpenAI-compatible endpoint,
@@ -94,7 +94,7 @@ def _translation_models(
     connections: Sequence[Mapping[str, Any]], translation_model: str | None,
 ) -> tuple[list[dict[str, Any]], str | None]:
     if importlib.util.find_spec("openai") is None:
-        return [], "OpenAI 兼容翻译需要安装 openai SDK。"
+        return [], "OpenAI-compatible translation requires the openai SDK."
     from .contracts import _valid_base_url
     connection = next((item for item in connections if item["adapter"] in TRANSLATION_ADAPTERS), None)
     if connection is None:
@@ -114,7 +114,7 @@ def _translation_models(
     from .translate import MAX_TEXT_CHARS
     models = [_model(name, ["remote"], list(LANGUAGES), list(LANGUAGES), max_text_chars=MAX_TEXT_CHARS)
               for name in dict.fromkeys(candidates)]
-    return models, None if models else "未配置翻译模型；请设置 DUBVIBE_MINI_TRANSLATION_MODELS。"
+    return models, None if models else "No translation models configured; set DUBVIBE_MINI_TRANSLATION_MODELS."
 
 
 # Local translation models report subsections of the pipeline languages; a
@@ -124,14 +124,14 @@ def _local_translation_models(devices: list[dict[str, Any]], adapter: str) -> tu
 
     dependencies = [name for name in inference_dependencies(adapter) if importlib.util.find_spec(name) is None]
     if dependencies:
-        return [], f"本地翻译模型 {variant(adapter)} 缺少运行依赖：{', '.join(dependencies)}。"
+        return [], f"Local translation model {variant(adapter)} is missing runtime dependencies: {', '.join(dependencies)}."
     available_devices = [device["id"] for device in devices if device["available"]]
     if not available_devices:
-        return [], "没有可执行本地翻译模型的 CPU/CUDA/ROCm/MPS 设备。"
+        return [], "No CPU/CUDA/ROCm/MPS device can run local translation models."
     languages = [code for code in LANGUAGES if code in supported_languages(adapter)]
     models = [_model(name, available_devices.copy(), languages, languages, max_text_chars=2000)
               for name in available_models(adapter)]
-    return models, None if models else f"未找到完整的本地 {variant(adapter)} 权重文件。"
+    return models, None if models else f"No complete local {variant(adapter)} checkpoint files found."
 
 
 def _nllb_models(devices: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], str | None]:
@@ -147,7 +147,7 @@ def _voxcpm_models(devices: list[dict[str, Any]]) -> tuple[list[dict[str, Any]],
                     "einops", "huggingface_hub", "safetensors", "tqdm", "packaging")
     missing = [name for name in dependencies if importlib.util.find_spec(name) is None]
     if missing:
-        return [], f"本地 VoxCPM2 缺少运行依赖：{', '.join(missing)}。"
+        return [], f"Local VoxCPM2 is missing runtime dependencies: {', '.join(missing)}."
     # Check installed distribution metadata, never import VoxCPM during a GET.
     from packaging.version import InvalidVersion, Version
     try:
@@ -155,20 +155,20 @@ def _voxcpm_models(devices: list[dict[str, Any]]) -> tuple[list[dict[str, Any]],
     except (importlib.metadata.PackageNotFoundError, InvalidVersion):
         supported = False
     if not supported:
-        return [], "本地 VoxCPM2 需要 voxcpm>=2.0.3，以支持明确的 CPU/CUDA/ROCm/MPS 设备选择。"
+        return [], "Local VoxCPM2 requires voxcpm>=2.0.3 for explicit CPU/CUDA/ROCm/MPS device selection."
     if shutil.which(ffmpeg_binary()) is None or shutil.which(ffprobe_binary()) is None:
-        return [], "本地媒体处理需要可执行的 FFmpeg 和 FFprobe。"
+        return [], "Local media processing requires executable FFmpeg and FFprobe."
     from .tts import MAX_REFERENCE_DURATION_MS, available_models
 
     available_devices = [device["id"] for device in devices if device["available"]]
     if not available_devices:
-        return [], "没有可执行 VoxCPM2 的 CPU/CUDA/ROCm/MPS 设备。"
+        return [], "No CPU/CUDA/ROCm/MPS device can run VoxCPM2."
     models = [_model(name, available_devices.copy(), list(LANGUAGES), list(LANGUAGES),
                      max_reference_duration_ms=MAX_REFERENCE_DURATION_MS)
               for name in available_models()]
     for model in models:
         model["voice_modes"] = ["source_clone"]
-    return models, None if models else "本地 VoxCPM2 权重或 tokenizer 资产不完整。"
+    return models, None if models else "Local VoxCPM2 checkpoints or tokenizer assets are incomplete."
 
 
 # Edge TTS synthesizes on Microsoft's public speech endpoint with preset voices;
@@ -180,19 +180,19 @@ EDGE_VOICES = (
     ("en", "en-US-AriaNeural", "Aria (US English)"), ("en", "en-US-GuyNeural", "Guy (US English)"),
     ("en", "en-US-AndrewNeural", "Andrew (US English)"), ("en", "en-US-EmmaNeural", "Emma (US English)"),
     ("en", "en-GB-SoniaNeural", "Sonia (British English)"), ("en", "en-GB-RyanNeural", "Ryan (British English)"),
-    ("zh", "zh-CN-XiaoxiaoNeural", "晓晓（简体中文）"), ("zh", "zh-CN-YunxiNeural", "云希（简体中文）"),
-    ("zh", "zh-CN-XiaoyiNeural", "晓伊（简体中文）"), ("zh", "zh-CN-YunjianNeural", "云健（简体中文）"),
-    ("zh", "zh-HK-HiuMaanNeural", "曉曼（香港粵語）"), ("zh", "zh-TW-HsiaoChenNeural", "曉臻（台灣國語）"),
-    ("ja", "ja-JP-NanamiNeural", "七海（日语）"), ("ja", "ja-JP-KeitaNeural", "圭太（日语）"),
-    ("km", "km-KH-SreymomNeural", "Srey Mom（高棉语）"), ("km", "km-KH-PisethNeural", "Piseth（高棉语）"),
+    ("zh", "zh-CN-XiaoxiaoNeural", "Xiaoxiao (Simplified Chinese)"), ("zh", "zh-CN-YunxiNeural", "Yunxi (Simplified Chinese)"),
+    ("zh", "zh-CN-XiaoyiNeural", "Xiaoyi (Simplified Chinese)"), ("zh", "zh-CN-YunjianNeural", "Yunjian (Simplified Chinese)"),
+    ("zh", "zh-HK-HiuMaanNeural", "Hiu Maan (Cantonese)"), ("zh", "zh-TW-HsiaoChenNeural", "Hsiao Chen (Taiwanese Mandarin)"),
+    ("ja", "ja-JP-NanamiNeural", "Nanami (Japanese)"), ("ja", "ja-JP-KeitaNeural", "Keita (Japanese)"),
+    ("km", "km-KH-SreymomNeural", "Srey Mom (Khmer)"), ("km", "km-KH-PisethNeural", "Piseth (Khmer)"),
 )
 
 
 def _edge_models(_devices: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], str | None]:
     if importlib.util.find_spec("edge_tts") is None:
-        return [], "Edge TTS 需要安装 edge-tts。"
+        return [], "Edge TTS requires the edge-tts package."
     if shutil.which(ffmpeg_binary()) is None or shutil.which(ffprobe_binary()) is None:
-        return [], "本地媒体处理需要可执行的 FFmpeg 和 FFprobe。"
+        return [], "Local media processing requires executable FFmpeg and FFprobe."
     model = _model(EDGE_MODEL, ["remote"], [], list(LANGUAGES))
     model["voice_modes"] = ["preset"]
     model["voices"] = [{"id": voice_id, "name": name, "languages": [language]}
@@ -204,30 +204,30 @@ def _demucs_models(devices: list[dict[str, Any]]) -> tuple[list[dict[str, Any]],
     # The child selects this vendored module path, independently of site-packages.
     source = Path(__file__).resolve().parents[3] / "submodule" / "demucs"
     if PathFinder.find_spec("demucs", [str(source)]) is None:
-        return [], "缺少仓库中的 Demucs 子模块源码。"
+        return [], "The Demucs submodule source is missing from the repository."
     dependencies = ("torch", "torchaudio", "numpy", "soundfile", "julius", "dora", "omegaconf",
                     "einops", "openunmix", "tqdm")
     missing = [name for name in dependencies if importlib.util.find_spec(name) is None]
     if missing:
-        return [], f"本地 Demucs 缺少运行依赖：{', '.join(missing)}。"
+        return [], f"Local Demucs is missing runtime dependencies: {', '.join(missing)}."
     if shutil.which(ffmpeg_binary()) is None or shutil.which(ffprobe_binary()) is None:
-        return [], "本地媒体处理需要可执行的 FFmpeg 和 FFprobe。"
+        return [], "Local media processing requires executable FFmpeg and FFprobe."
     from .separate import available_models
 
     available_devices = [device["id"] for device in devices if device["available"]]
     if not available_devices:
-        return [], "没有可执行 Demucs 的 CPU/CUDA/ROCm/MPS 设备。"
+        return [], "No CPU/CUDA/ROCm/MPS device can run Demucs."
     models = [_model(name, available_devices.copy(), [], [],
                      max_audio_duration_ms=RUNTIME_LIMITS["max_video_duration_ms"])
               for name in available_models()]
-    return models, None if models else "未找到非空的本地 htdemucs 权重。"
+    return models, None if models else "No non-empty local htdemucs checkpoints found."
 
 
 def _subtitle_alignment_models(devices: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], str | None]:
     dependencies = ("transformers", "torch", "numpy", "soundfile", "librosa", "packaging")
     missing = [name for name in dependencies if importlib.util.find_spec(name) is None]
     if missing:
-        return [], f"本地 Qwen 字幕对齐缺少运行依赖：{', '.join(missing)}。"
+        return [], f"Local Qwen subtitle alignment is missing runtime dependencies: {', '.join(missing)}."
     from packaging.version import InvalidVersion, Version
     try:
         version = Version(importlib.metadata.version("transformers"))
@@ -235,15 +235,15 @@ def _subtitle_alignment_models(devices: list[dict[str, Any]]) -> tuple[list[dict
     except (importlib.metadata.PackageNotFoundError, InvalidVersion):
         supported = False
     if not supported:
-        return [], "本地 Qwen 字幕对齐需要 transformers>=5.17,<6。"
+        return [], "Local Qwen subtitle alignment requires transformers>=5.17,<6."
     from .forced_alignment import available_models
 
     available_devices = [device["id"] for device in devices if device["available"]]
     if not available_devices:
-        return [], "没有可执行 Qwen 字幕对齐的 CPU/CUDA/ROCm/MPS 设备。"
+        return [], "No CPU/CUDA/ROCm/MPS device can run Qwen subtitle alignment."
     models = [_model(name, available_devices.copy(), [], ["en", "zh"], max_audio_duration_ms=300_000)
               for name in available_models()]
-    return models, None if models else "本地 Qwen3-ForcedAligner-0.6B-hf 权重或 tokenizer 资产不完整。"
+    return models, None if models else "Local Qwen3-ForcedAligner-0.6B-hf checkpoints or tokenizer assets are incomplete."
 
 
 def runtime_info() -> dict[str, Any]:

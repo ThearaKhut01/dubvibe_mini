@@ -64,11 +64,11 @@ def installation_plan(host: dict) -> dict:
     """Pinned Torch/Audio/Codec ABI sets, never install or change OS drivers."""
     system = host["system"]
     plan = {"backend": "cpu", "index": "https://download.pytorch.org/whl/cpu", "version": "2.8.0",
-            "codec": "0.7.0", "prerequisites": [], "packages": [], "detail": "CPU：未发现受支持的 GPU 运行环境"}
+            "codec": "0.7.0", "prerequisites": [], "packages": [], "detail": "CPU: no supported GPU runtime detected"}
     if system == "Darwin":
         plan["index"] = "https://mirrors.aliyun.com/pypi/simple/"
         plan["backend"] = "mps" if host["arch"] in {"arm64", "aarch64"} else "cpu"
-        plan["detail"] = "Apple MPS：安装后检查实际运算能力" if plan["backend"] == "mps" else "Intel Mac 需要自行提供支持 Torch >= 2.5 的 Python 环境"
+        plan["detail"] = "Apple MPS: runtime verified after install" if plan["backend"] == "mps" else "Intel Mac requires a Python environment supporting Torch >= 2.5"
         return plan
     nvidia = [gpu for gpu in host["gpus"] if gpu["vendor"] == "nvidia"]
     for gpu in nvidia:
@@ -82,33 +82,33 @@ def installation_plan(host: dict) -> dict:
         if capability >= 5 and driver >= minimum:
             variant = "cu128" if modern else "cu126"
             plan.update(backend="cuda", index=f"https://download.pytorch.org/whl/{variant}",
-                        detail=f"{gpu['name']} · CUDA {variant[2:4]}.{variant[4:]} · 驱动 {gpu['driver']}；安装后验证运算")
+                        detail=f"{gpu['name']} · CUDA {variant[2:4]}.{variant[4:]} · driver {gpu['driver']}; verified after install")
             return plan
     if nvidia:
-        plan["detail"] = "已发现 NVIDIA GPU，但架构或驱动不满足兼容 CUDA 包要求；使用 CPU"
+        plan["detail"] = "NVIDIA GPU detected, but the architecture or driver does not meet CUDA package requirements; using CPU"
     amd = [gpu for gpu in host["gpus"] if gpu["vendor"] == "amd"]
     if amd and system == "Linux" and host.get("rocm", "").startswith("6.4"):
-        plan.update(backend="rocm", index="https://download.pytorch.org/whl/rocm6.4", detail="AMD ROCm 6.4：安装后验证 GPU 运算")
+        plan.update(backend="rocm", index="https://download.pytorch.org/whl/rocm6.4", detail="AMD ROCm 6.4: GPU verified after install")
     elif amd and system == "Windows":
         supported = {"AMD Radeon RX 9070 XT", "AMD Radeon RX 9070", "AMD Radeon RX 9060 XT", "AMD Radeon RX 7900 XTX",
                      "AMD Radeon RX 7700", "AMD Radeon PRO W7900", "AMD Radeon PRO W7900 Dual Slot", "AMD Radeon AI PRO R9700"}
         if host.get("build", 0) >= 22000 and any(gpu["name"] in supported for gpu in amd):
             base = "https://repo.radeon.com/rocm/windows/rocm-rel-7.2.1/"
             plan.update(backend="rocm", version="2.9.1", codec="0.8.1", index="https://mirrors.aliyun.com/pypi/simple/",
-                        detail="AMD ROCm 7.2.1（需要 AMD 26.2.2 驱动）；安装后验证 GPU 运算",
+                        detail="AMD ROCm 7.2.1 (requires AMD 26.2.2 driver); GPU verified after install",
                         prerequisites=[base + f"{name}-7.2.1-py3-none-win_amd64.whl" for name in ("rocm_sdk_core", "rocm_sdk_devel", "rocm_sdk_libraries_custom")] + [base + "rocm-7.2.1.tar.gz"],
                         packages=[base + f"{name}-2.9.1%2Brocm7.2.1-cp312-cp312-win_amd64.whl" for name in ("torch", "torchaudio")])
         else:
-            plan["detail"] = "已发现 AMD GPU；官方 Windows ROCm 需要 Windows 11 和受支持的 Radeon 型号，当前使用 CPU"
+            plan["detail"] = "AMD GPU detected; official Windows ROCm requires Windows 11 and a supported Radeon model, using CPU"
     elif amd:
-        plan["detail"] = "已发现 AMD GPU，但未发现兼容的 ROCm 6.4；当前使用 CPU"
+        plan["detail"] = "AMD GPU detected, but no compatible ROCm 6.4 found; using CPU"
     return plan
 
 
 def _exercise(torch, device: str) -> None:
     value = torch.ones((16, 16), device=device)
     if (value @ value).sum().item() != 4096:
-        raise RuntimeError("GPU 运算结果不正确")
+        raise RuntimeError("GPU computation produced an incorrect result")
 
 
 def torch_devices(torch) -> list[dict]:
@@ -121,18 +121,18 @@ def torch_devices(torch) -> list[dict]:
             try:
                 _exercise(torch, device)
             except Exception as exc:
-                reason = f"GPU 运算检查失败：{type(exc).__name__}: {exc}"
+                reason = f"GPU compute check failed: {type(exc).__name__}: {exc}"
             devices.append({"id": device, "name": torch.cuda.get_device_name(index), "backend": "rocm" if hip else "cuda",
                             "available": reason is None, "unavailable_reason": reason})
     mps = getattr(getattr(torch, "backends", None), "mps", None)
     if mps is not None and mps.is_built():
-        reason = "Apple MPS 在此系统不可用"
+        reason = "Apple MPS is unavailable on this system"
         if mps.is_available():
             try:
                 _exercise(torch, "mps")
                 reason = None
             except Exception as exc:
-                reason = f"MPS 运算检查失败：{type(exc).__name__}: {exc}"
+                reason = f"MPS compute check failed: {type(exc).__name__}: {exc}"
         devices.append({"id": "mps", "name": "Apple MPS", "backend": "mps", "available": reason is None, "unavailable_reason": reason})
     devices.append({"id": "cpu", "name": "CPU", "backend": "cpu", "available": True, "unavailable_reason": None})
     return devices
@@ -149,8 +149,8 @@ def detect_devices() -> list[dict]:
 def accelerator_status() -> dict:
     devices = detect_devices()
     selected = next(device for device in devices if device["available"])
-    detail = f"{selected['name']} · {selected['backend'].upper()}（运算检查通过）" if selected['backend'] != 'cpu' else "CPU：未启用 GPU 加速"
+    detail = f"{selected['name']} · {selected['backend'].upper()} (compute check passed)" if selected['backend'] != 'cpu' else "CPU: GPU acceleration not enabled"
     failures = [device["unavailable_reason"] for device in devices if not device["available"]]
     if failures:
-        detail += "；" + "；".join(failures)
+        detail += "; " + "; ".join(failures)
     return {"devices": devices, "backend": selected["backend"], "detail": detail}

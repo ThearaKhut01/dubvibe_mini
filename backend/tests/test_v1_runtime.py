@@ -173,7 +173,7 @@ def test_whisper_reports_missing_punkt_data_without_downloading(installed_runtim
     monkeypatch.setattr(downloader.Downloader, "download", lambda *_args, **_kwargs: pytest.fail("Runtime must not download data"))
     capability = runtime.probe_capability("whisper")
     assert not capability["available"] and capability["models"] == []
-    assert ".venv/bin/python -m nltk.downloader punkt_tab" in capability["unavailable_reason"]
+    assert ".venv/Scripts/python -m nltk.downloader punkt_tab" in capability["unavailable_reason"]
 
 
 def test_configured_ffmpeg_without_path_ffmpeg_does_not_advertise_whisper(installed_runtime, monkeypatch):
@@ -309,7 +309,7 @@ def test_demucs_uses_childs_vendored_source_path_without_importing_it(all_model_
 
     monkeypatch.setattr(runtime, "PathFinder", SimpleNamespace(find_spec=locate))
     capability = probe_all(connections=all_model_assets)["capabilities"][3]
-    assert not capability["available"] and "子模块" in capability["unavailable_reason"]
+    assert not capability["available"] and "submodule" in capability["unavailable_reason"]
     assert calls == [("demucs", [str(runtime.Path(runtime.__file__).resolve().parents[3] / "submodule" / "demucs")])]
 
 
@@ -432,7 +432,7 @@ def test_local_translation_models_report_variant_assets(installed_runtime, monke
     (root / names[2]).write_bytes(b"")
     capability = runtime.probe_capability(adapter)
     assert not capability["available"] and capability["models"] == []
-    assert "未找到完整" in capability["unavailable_reason"]
+    assert "No complete local" in capability["unavailable_reason"]
 
 
 @pytest.mark.parametrize("missing,adapters", [
