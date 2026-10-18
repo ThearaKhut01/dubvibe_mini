@@ -257,6 +257,112 @@
     ]
   },
   {
+    "id": "nllb",
+    "name": "NLLB-200",
+    "variant": "distilled-600M",
+    "purpose": "本地翻译",
+    "optional": true,
+    "env": "DUBVIBE_MINI_NLLB_MODEL_DIR",
+    "directory": "nllb/NLLB-200-distilled-600M",
+    "files": [
+      {
+        "path": "config.json",
+        "size": 846,
+        "sha256": "f9b4081d3d108e9d06532ea8d92b932c04ed3a15ff2f87e6982f8e14db51fbc5",
+        "url": "https://modelscope.cn/api/v1/models/facebook/nllb-200-distilled-600M/repo?Revision=64c0273bad14fae9af284fd99ddd64869e38b7fd&FilePath=config.json"
+      },
+      {
+        "path": "generation_config.json",
+        "size": 189,
+        "sha256": "0bb604cdb8392649176935a447ce994128f170a6908c135a17d0e3dfb8113cb2",
+        "url": "https://modelscope.cn/api/v1/models/facebook/nllb-200-distilled-600M/repo?Revision=64c0273bad14fae9af284fd99ddd64869e38b7fd&FilePath=generation_config.json"
+      },
+      {
+        "path": "pytorch_model.bin",
+        "size": 2460457927,
+        "sha256": "c266c2cfd19758b6d09c1fc31ecdf1e485509035f6b51dfe84f1ada83eefcc42",
+        "url": "https://modelscope.cn/api/v1/models/facebook/nllb-200-distilled-600M/repo?Revision=48c17c9133799ba9e4aa5092fad6678e44b2c4d9&FilePath=pytorch_model.bin"
+      },
+      {
+        "path": "sentencepiece.bpe.model",
+        "size": 4852054,
+        "sha256": "14bb8dfb35c0ffdea7bc01e56cea38b9e3d5efcdcb9c251d6b40538e1aab555a",
+        "url": "https://modelscope.cn/api/v1/models/facebook/nllb-200-distilled-600M/repo?Revision=48c17c9133799ba9e4aa5092fad6678e44b2c4d9&FilePath=sentencepiece.bpe.model"
+      },
+      {
+        "path": "special_tokens_map.json",
+        "size": 3548,
+        "sha256": "992bd4ed610d644d6823081937bcc91bb8878dd556cea4ae5327f2480361330e",
+        "url": "https://modelscope.cn/api/v1/models/facebook/nllb-200-distilled-600M/repo?Revision=64c0273bad14fae9af284fd99ddd64869e38b7fd&FilePath=special_tokens_map.json"
+      },
+      {
+        "path": "tokenizer.json",
+        "size": 17331176,
+        "sha256": "e316b82de11d0f951f370943b3c438311629547285129b0b81dadabd01bca665",
+        "url": "https://modelscope.cn/api/v1/models/facebook/nllb-200-distilled-600M/repo?Revision=64c0273bad14fae9af284fd99ddd64869e38b7fd&FilePath=tokenizer.json"
+      },
+      {
+        "path": "tokenizer_config.json",
+        "size": 564,
+        "sha256": "d1aa8c3697d3e35674f97b5b7e9c99d22b010f528e80140257d97316be90d044",
+        "url": "https://modelscope.cn/api/v1/models/facebook/nllb-200-distilled-600M/repo?Revision=64c0273bad14fae9af284fd99ddd64869e38b7fd&FilePath=tokenizer_config.json"
+      }
+    ]
+  },
+  {
+    "id": "hy_mt",
+    "name": "Tencent HY-MT1.5",
+    "variant": "1.8B",
+    "purpose": "本地翻译",
+    "optional": true,
+    "env": "DUBVIBE_MINI_HY_MT_MODEL_DIR",
+    "directory": "hy-mt/HY-MT1.5-1.8B",
+    "files": [
+      {
+        "path": "chat_template.jinja",
+        "size": 654,
+        "sha256": "b7491ec0e9c869dfce20f2176758099bf248d979dd05530ede99deb21698acee",
+        "url": "https://modelscope.cn/api/v1/models/Tencent-Hunyuan/HY-MT1.5-1.8B/repo?Revision=e14d07134e42ffb3e9a4cff53f92142ec16b3d2d&FilePath=chat_template.jinja"
+      },
+      {
+        "path": "config.json",
+        "size": 1342,
+        "sha256": "a1788df3224420f43ed1a424ad58bfacc34f689b0e477ce69d1298fa6d26292b",
+        "url": "https://modelscope.cn/api/v1/models/Tencent-Hunyuan/HY-MT1.5-1.8B/repo?Revision=e14d07134e42ffb3e9a4cff53f92142ec16b3d2d&FilePath=config.json"
+      },
+      {
+        "path": "generation_config.json",
+        "size": 221,
+        "sha256": "3586ba4829d9769b89523523cb562f2e894c519274f8a0e9b970287a0b1388a9",
+        "url": "https://modelscope.cn/api/v1/models/Tencent-Hunyuan/HY-MT1.5-1.8B/repo?Revision=e14d07134e42ffb3e9a4cff53f92142ec16b3d2d&FilePath=generation_config.json"
+      },
+      {
+        "path": "model.safetensors",
+        "size": 4077072784,
+        "sha256": "07736f560253d8c991616060fb2d855420957c268fa7d32fa8593df2f83b21ab",
+        "url": "https://modelscope.cn/api/v1/models/Tencent-Hunyuan/HY-MT1.5-1.8B/repo?Revision=e14d07134e42ffb3e9a4cff53f92142ec16b3d2d&FilePath=model.safetensors"
+      },
+      {
+        "path": "special_tokens_map.json",
+        "size": 488,
+        "sha256": "bb9f59990034dae326581b9c62471523975417869f78a244b7ae2ce8cbb085eb",
+        "url": "https://modelscope.cn/api/v1/models/Tencent-Hunyuan/HY-MT1.5-1.8B/repo?Revision=e14d07134e42ffb3e9a4cff53f92142ec16b3d2d&FilePath=special_tokens_map.json"
+      },
+      {
+        "path": "tokenizer.json",
+        "size": 9527287,
+        "sha256": "b475bbef1b0b2fd57dcb865332b546475bd1ede2deb3bb91bafd0c047a8a530a",
+        "url": "https://modelscope.cn/api/v1/models/Tencent-Hunyuan/HY-MT1.5-1.8B/repo?Revision=e14d07134e42ffb3e9a4cff53f92142ec16b3d2d&FilePath=tokenizer.json"
+      },
+      {
+        "path": "tokenizer_config.json",
+        "size": 165815,
+        "sha256": "53bd8581b601a8ee9caefeb988207de50b3fc0b733295bdf5ad68dec4cc0b07c",
+        "url": "https://modelscope.cn/api/v1/models/Tencent-Hunyuan/HY-MT1.5-1.8B/repo?Revision=e14d07134e42ffb3e9a4cff53f92142ec16b3d2d&FilePath=tokenizer_config.json"
+      }
+    ]
+  },
+  {
     "id": "demucs",
     "name": "Demucs",
     "variant": "htdemucs",

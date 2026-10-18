@@ -17,7 +17,7 @@ const OUTPUT_LABELS: Record<TaskConfig["output_mode"], [string, string, string]>
   both: ["Dubbing and subtitles", "Dubbing and subtitles"],
 }
 
-const LANGUAGE_NAMES: Record<string, string> = { en: "English", zh: "Chinese", ja: "Japanese" }
+const LANGUAGE_NAMES: Record<string, string> = { en: "English", zh: "Chinese", ja: "Japanese", km: "Khmer" }
 
 function languageName(code: string, text: Text) {
   if (code === "auto") return text("Auto detect", "自动识别", "\u179F\u17D2\u179C\u17D0\u1799\u1794\u17D2\u179A\u179C\u178F\u17D2\u178F\u17B7")
@@ -146,6 +146,8 @@ export function TaskOptions({ value, runtime, onChange }: {
 const ADAPTER_NAMES: Record<string, [string, string, string]> = {
   whisper: ["Whisper", "Whisper", "Whisper"],
   openai: ["OpenAI-compatible", "OpenAI 兼容", "OpenAI 互換"],
+  nllb: ["NLLB-200", "NLLB-200", "NLLB-200"],
+  hy_mt: ["Tencent HY-MT", "腾讯 HY-MT", "Tencent HY-MT"],
   edge: ["Edge TTS", "Edge TTS", "Edge TTS"],
   voxcpm: ["VoxCPM", "VoxCPM", "VoxCPM"],
   demucs: ["Demucs", "Demucs", "Demucs"],

@@ -107,7 +107,7 @@ def test_real_catalogue_reads_local_metadata_and_remote_config_without_model_or_
     whisper, translation, tts, separation = result["capabilities"][:4]
     assert whisper["available"] and whisper["unavailable_reason"] is None
     assert [model["id"] for model in whisper["models"]] == ["tiny", "small.en"]
-    assert whisper["models"][0]["source_languages"] == ["auto", "en", "zh", "ja"]
+    assert whisper["models"][0]["source_languages"] == ["auto", "en", "zh", "ja", "km"]
     assert whisper["models"][1]["source_languages"] == ["auto", "en"]
     assert all(model["devices"] == ["cpu", "cuda:0"] for model in whisper["models"])
     assert all(model["input_limits"] == {"max_audio_duration_ms": 600000,
@@ -133,8 +133,8 @@ def test_translation_models_use_configured_candidates_and_preserve_saved_default
     result = probe_all(connections=installed_runtime, translation_model="saved-default")
     capability = result["capabilities"][1]
     assert [model["id"] for model in capability["models"]] == ["custom-one", "custom-two", "saved-default"]
-    assert all(model["devices"] == ["remote"] and model["source_languages"] == ["en", "zh", "ja"]
-               and model["target_languages"] == ["en", "zh", "ja"] for model in capability["models"])
+    assert all(model["devices"] == ["remote"] and model["source_languages"] == ["en", "zh", "ja", "km"]
+               and model["target_languages"] == ["en", "zh", "ja", "km"] for model in capability["models"])
     monkeypatch.setenv("YOUDUB_TRANSLATION_MODELS", " , ")
     capability = probe_all(connections=installed_runtime)["capabilities"][1]
     assert not capability["available"] and capability["models"] == []
@@ -230,7 +230,7 @@ def test_all_capabilities_ready_reads_assets_without_loading_models_or_network(a
     assert all(item["available"] and item["unavailable_reason"] is None for item in result["capabilities"][:4])
     edge = result["capabilities"][5]
     assert edge["models"] == [{
-        "id": "Edge TTS", "devices": ["remote"], "source_languages": [], "target_languages": ["en", "zh", "ja"],
+        "id": "Edge TTS", "devices": ["remote"], "source_languages": [], "target_languages": ["en", "zh", "ja", "km"],
         "voice_modes": ["preset"],
         "voices": [{"id": voice_id, "name": name, "languages": [language]}
                    for language, voice_id, name in runtime.EDGE_VOICES],
@@ -241,8 +241,8 @@ def test_all_capabilities_ready_reads_assets_without_loading_models_or_network(a
                                         "can_cancel": False, "can_lookup_request_key": False}
     tts_capability, separation = result["capabilities"][2:4]
     assert tts_capability["models"] == [{
-        "id": "VoxCPM2", "devices": ["cpu", "cuda:0"], "source_languages": ["en", "zh", "ja"],
-        "target_languages": ["en", "zh", "ja"], "voice_modes": ["source_clone"], "voices": [],
+        "id": "VoxCPM2", "devices": ["cpu", "cuda:0"], "source_languages": ["en", "zh", "ja", "km"],
+        "target_languages": ["en", "zh", "ja", "km"], "voice_modes": ["source_clone"], "voices": [],
         "input_limits": {"max_audio_duration_ms": None, "max_text_chars": None, "max_reference_duration_ms": 10000},
     }]
     assert separation["models"] == [{
@@ -399,3 +399,49 @@ def test_environment_info_does_not_probe_models(monkeypatch):
     for name in ("_whisper_models", "_translation_models", "_voxcpm_models", "_demucs_models", "_subtitle_alignment_models"):
         monkeypatch.setattr(runtime, name, lambda *args: pytest.fail("environment info must not probe models"))
     assert set(runtime.runtime_info()) == {"instance_id", "platform", "arch", "devices", "limits"}
+
+
+LOCAL_TRANSLATION_TEST_ASSETS = {
+    "nllb": ("NLLB-200-distilled-600M", ("config.json", "generation_config.json", "pytorch_model.bin",
+                                       "sentencepiece.bpe.model", "special_tokens_map.json",
+                                       "tokenizer.json", "tokenizer_config.json")),
+    "hy_mt": ("HY-MT1.5-1.8B", ("chat_template.jinja", "config.json", "generation_config.json", "model.safetensors",
+                                "special_tokens_map.json", "tokenizer.json", "tokenizer_config.json")),
+}
+
+
+@pytest.mark.parametrize("adapter", ["nllb", "hy_mt"])
+def test_local_translation_models_report_variant_assets(installed_runtime, monkeypatch, tmp_path, adapter):
+    variant, names = LOCAL_TRANSLATION_TEST_ASSETS[adapter]
+    env_name = "YOUDUB_NLLB_MODEL_DIR" if adapter == "nllb" else "YOUDUB_HY_MT_MODEL_DIR"
+    root = tmp_path / adapter
+    root.mkdir()
+    for name in names:
+        (root / name).write_bytes(b"metadata-only fixture asset")
+    monkeypatch.setenv(env_name, str(root))
+    capability = runtime.probe_capability(adapter)
+    assert capability["available"] and capability["unavailable_reason"] is None
+    assert capability["capability"] == "translation" and capability["execution"] == "local"
+    assert capability["requires_api_key"] is False and capability["data_sent"] == []
+    assert capability["remote_operations"] is None
+    assert capability["models"] == [{
+        "id": variant, "devices": ["cpu", "cuda:0"], "source_languages": ["en", "zh", "ja", "km"],
+        "target_languages": ["en", "zh", "ja", "km"], "voice_modes": [], "voices": [],
+        "input_limits": {"max_audio_duration_ms": None, "max_text_chars": 2000, "max_reference_duration_ms": None},
+    }]
+    (root / names[2]).write_bytes(b"")
+    capability = runtime.probe_capability(adapter)
+    assert not capability["available"] and capability["models"] == []
+    assert "未找到完整" in capability["unavailable_reason"]
+
+
+@pytest.mark.parametrize("missing,adapters", [
+    ("torch", ("nllb", "hy_mt")), ("transformers", ("nllb", "hy_mt")), ("sentencepiece", ("nllb",)),
+])
+def test_local_translation_dependencies_are_reported_per_adapter(installed_runtime, monkeypatch, missing, adapters):
+    monkeypatch.setattr(runtime.importlib.util, "find_spec",
+                        lambda name: None if name == missing else object())
+    for adapter in adapters:
+        capability = runtime.probe_capability(adapter)
+        assert not capability["available"] and capability["models"] == []
+        assert missing in capability["unavailable_reason"]

@@ -117,6 +117,31 @@ def _translation_models(
     return models, None if models else "未配置翻译模型；请设置 DUBVIBE_MINI_TRANSLATION_MODELS。"
 
 
+# Local translation models report subsections of the pipeline languages; a
+# provider outside its own language table stays out of the fallback chain.
+def _local_translation_models(devices: list[dict[str, Any]], adapter: str) -> tuple[list[dict[str, Any]], str | None]:
+    from .local_translate import available_models, inference_dependencies, supported_languages, variant
+
+    dependencies = [name for name in inference_dependencies(adapter) if importlib.util.find_spec(name) is None]
+    if dependencies:
+        return [], f"本地翻译模型 {variant(adapter)} 缺少运行依赖：{', '.join(dependencies)}。"
+    available_devices = [device["id"] for device in devices if device["available"]]
+    if not available_devices:
+        return [], "没有可执行本地翻译模型的 CPU/CUDA/ROCm/MPS 设备。"
+    languages = [code for code in LANGUAGES if code in supported_languages(adapter)]
+    models = [_model(name, available_devices.copy(), languages, languages, max_text_chars=2000)
+              for name in available_models(adapter)]
+    return models, None if models else f"未找到完整的本地 {variant(adapter)} 权重文件。"
+
+
+def _nllb_models(devices: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], str | None]:
+    return _local_translation_models(devices, "nllb")
+
+
+def _hy_mt_models(devices: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], str | None]:
+    return _local_translation_models(devices, "hy_mt")
+
+
 def _voxcpm_models(devices: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], str | None]:
     dependencies = ("voxcpm", "torch", "torchaudio", "numpy", "soundfile", "transformers", "librosa",
                     "einops", "huggingface_hub", "safetensors", "tqdm", "packaging")
@@ -159,6 +184,7 @@ EDGE_VOICES = (
     ("zh", "zh-CN-XiaoyiNeural", "晓伊（简体中文）"), ("zh", "zh-CN-YunjianNeural", "云健（简体中文）"),
     ("zh", "zh-HK-HiuMaanNeural", "曉曼（香港粵語）"), ("zh", "zh-TW-HsiaoChenNeural", "曉臻（台灣國語）"),
     ("ja", "ja-JP-NanamiNeural", "七海（日语）"), ("ja", "ja-JP-KeitaNeural", "圭太（日语）"),
+    ("km", "km-KH-SreymomNeural", "Srey Mom（高棉语）"), ("km", "km-KH-PisethNeural", "Piseth（高棉语）"),
 )
 
 
@@ -247,13 +273,15 @@ def probe_capability(adapter: str, *, connections: Sequence[Mapping[str, Any]] =
     else:
         probes = {"whisper": ("asr", _whisper_models), "voxcpm": ("tts", _voxcpm_models),
                   "demucs": ("separation", _demucs_models),
-                  "qwen_forced_aligner": ("subtitle_alignment", _subtitle_alignment_models)}
+                  "qwen_forced_aligner": ("subtitle_alignment", _subtitle_alignment_models),
+                  "nllb": ("translation", _nllb_models), "hy_mt": ("translation", _hy_mt_models)}
         if adapter not in probes:
             raise ValueError(f"Unknown Python provider: {adapter}")
         kind, probe = probes[adapter]
         models, reason = probe(_detect_devices())
     return {"adapter": adapter, "capability": kind, "execution": execution,
-            "available": bool(models), "unavailable_reason": reason, "requires_api_key": kind == "translation",
+            "available": bool(models), "unavailable_reason": reason,
+            "requires_api_key": kind == "translation" and execution == "remote",
             "models": models, "data_sent": ["text"] if execution == "remote" else [],
             "remote_operations": {"submit_mode": "sync", "can_poll": False, "can_cancel": False,
                                   "can_lookup_request_key": False} if execution == "remote" else None}

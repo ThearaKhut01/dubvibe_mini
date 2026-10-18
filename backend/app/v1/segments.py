@@ -10,7 +10,7 @@ from pydantic import Field, ValidationError, field_validator, model_validator
 from .contracts import Contract, NonEmptyString
 from .errors import ApiError
 
-LANGUAGES = ("en", "zh", "ja")
+LANGUAGES = ("en", "zh", "ja", "km")
 
 
 class TimedWord(Contract):

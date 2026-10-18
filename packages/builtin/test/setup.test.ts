@@ -230,7 +230,7 @@ test('optional Whisper sizes download on demand after first-run finishes, with p
   // First-run state stays untouched: four required models, all ready, no optional ones.
   assert.equal(ctx.setup.snapshot().models.length, 4)
   const models = await (await fetch(`${ctx.http.address}/api/setup/models`)).json() as any
-  assert.equal(models.items.length, 15)
+  assert.equal(models.items.length, 17)
   const small = models.items.find((item: any) => item.id === 'whisper-small')
   assert.equal(small.optional, true)
   assert.equal(small.installed, false)

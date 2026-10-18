@@ -37,7 +37,50 @@ def batches(transcript: Transcript) -> Iterator[list[Segment]]:
         yield batch
 
 
+# Local translation adapters run the models in this operation's own process.
+LOCAL_TRANSLATION_ADAPTERS = frozenset({"nllb", "hy_mt"})
+
+
+def _device_for_local(context: StageContext, provider: str) -> str:
+    if provider == context.config.translation.adapter:
+        device = context.config.translation.device
+    else:
+        device = "cpu"
+    if device == "remote":
+        raise ApiError(422, "INVALID_CONFIG", "A local translation provider requires a local device.",
+                       stage="translate", action="adjust_settings")
+    return device
+
+
+async def _translate_local(context: StageContext, transcript: Transcript, progress: Callable, *, provider: str) -> Translation:
+    from .local_translate import available_models, run_translation, variant
+
+    if variant(provider) != _model_for(context, provider):
+        raise ApiError(503, "MODEL_NOT_READY", "No local translation weights match the selected model.",
+                       stage="translate")
+    if not available_models(provider):
+        raise ApiError(503, "MODEL_NOT_READY", "Download the local translation model in Local models settings.",
+                       stage="translate")
+    device = _device_for_local(context, provider)
+    texts = [segment.text for segment in transcript.segments]
+    # Heavy transformers inference runs on a thread; the loop stays free so
+    # cancellations surface through check_cancel between batches/segments.
+    translated = await asyncio.to_thread(
+        run_translation, provider, transcript.detected_language, context.config.target_language, texts,
+        device, context.check_cancel, progress)
+    try:
+        segments = [TranslatedSegment.model_validate({"segment_id": segment.id, "text": text})
+                    for segment, text in zip(transcript.segments, translated, strict=True)]
+    except ValidationError as exc:
+        raise ApiError(502, "INVALID_PROVIDER_RESULT", "The local translation returned blank or invalid text.",
+                       stage="translate", action="retry") from exc
+    return Translation(source_language=transcript.detected_language, target_language=context.config.target_language,
+                       segments=segments)
+
+
 async def _translate(context: StageContext, transcript: Transcript, progress: Callable, *, provider: str = "openai") -> Translation:
+    if provider in LOCAL_TRANSLATION_ADAPTERS:
+        return await _translate_local(context, transcript, progress, provider=provider)
     try:
         import httpx
         from openai import AsyncOpenAI, APIConnectionError, APIResponseValidationError, APIStatusError, APITimeoutError
