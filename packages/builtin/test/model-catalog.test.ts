@@ -39,9 +39,11 @@ test('remove deletes only the model manifest files, never other files in the fol
   const root = await mkdtemp(join(tmpdir(), 'dubvibe_mini-remove-'))
   const whisper = manifestFor('whisper')
   await writeFile(join(root, whisper.files[0]!.path), 'model')
+  await writeFile(join(root, `${whisper.files[0]!.path}.part`), 'partial transfer')
   await writeFile(join(root, 'keep-me.txt'), 'user data')
   await removeFiles(root, 'whisper')
   await assert.rejects(stat(join(root, whisper.files[0]!.path)))
+  await assert.rejects(stat(join(root, `${whisper.files[0]!.path}.part`)))
   assert.equal(await readFile(join(root, 'keep-me.txt'), 'utf8'), 'user data')
 })
 

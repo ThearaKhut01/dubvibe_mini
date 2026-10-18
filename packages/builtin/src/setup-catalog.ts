@@ -31,5 +31,8 @@ export async function removeFiles(folder: string, id: string, options: { busy?: 
   if (options.busy) throw new AppError('MODEL_BUSY', 'Stop the download before removing this model.', 409)
   const definition = modelManifest.find(item => item.id === id)
   if (!definition) throw new AppError('NOT_FOUND', 'Unknown model.', 404)
-  for (const file of definition.files) await rm(join(folder, file.path), { force: true })
+  for (const file of definition.files) {
+    await rm(join(folder, file.path), { force: true })
+    await rm(join(folder, `${file.path}.part`), { force: true })
+  }
 }
