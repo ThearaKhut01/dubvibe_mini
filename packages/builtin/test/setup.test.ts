@@ -1,10 +1,11 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { Context } from 'cordis'
-import { mkdtemp, mkdir, writeFile, readFile, cp, rm } from 'node:fs/promises'
+import { mkdtemp, mkdir, writeFile, readFile, open, cp, rm } from 'node:fs/promises'
+import { existsSync } from 'node:fs'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { delimiter, join, resolve } from 'node:path'
+import { delimiter, dirname, join, resolve } from 'node:path'
 import { tmpdir } from 'node:os'
 import Http from '../src/http.js'
 import Setup from '../src/setup.js'
@@ -180,4 +181,90 @@ test('first-run API runs four models concurrently, pauses independently, guards 
   assert.equal(ctx.setup.snapshot().models.length, 4)
   assert.ok(ctx.setup.snapshot().models.every(model => model.status === 'ready'))
   assert.equal((await action('resume')).status, 409)
+})
+
+test('optional Whisper sizes download on demand after first-run finishes, with pause, resume and guards', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'dubvibe_mini-optional-'))
+  const python = join(root, 'python')
+  await writeFile(python, 'test executable')
+  if (process.platform === 'win32') await writeFile(join(root, 'avcodec-test.dll'), 'test shared library')
+  const previous = { FFMPEG_PATH: process.env.FFMPEG_PATH, FFPROBE_PATH: process.env.FFPROBE_PATH, YOUDUB_DESKTOP_DATA_DIR: process.env.YOUDUB_DESKTOP_DATA_DIR, NLTK_DATA: process.env.NLTK_DATA }
+  process.env.FFMPEG_PATH = python; process.env.FFPROBE_PATH = python
+  let release!: () => void
+  const firstRun = new Promise<void>(resolve => { release = resolve })
+  let releaseOptional!: () => void
+  const optional = new Promise<void>(resolve => { releaseOptional = resolve })
+  const started: string[] = []
+  t.mock.method(DownloadClient.prototype, 'download', async function(file: any, target: string, signal: AbortSignal, progress: (value: number) => void) {
+    started.push(target); progress(1)
+    await new Promise<void>((resolve, reject) => {
+      const abort = () => reject(signal.reason)
+      signal.addEventListener('abort', abort, { once: true })
+      void (target.endsWith('small.pt') ? optional : firstRun).then(() => {
+        signal.removeEventListener('abort', abort); signal.aborted ? reject(signal.reason) : resolve()
+      })
+    })
+    await mkdir(dirname(target), { recursive: true })
+    const handle = await open(target, 'w', 0o600)
+    await handle.truncate(file.size)
+    await handle.close()
+    progress(file.size)
+  })
+  const ctx = new Context()
+  const app = await ctx.plugin(async function optionalDownload(owner) {
+    owner.reflect.provide('process', { run: async ({ args }: { args: string[] }) => ({ stderr: '', stdout: args[1] === 'backend.workers.setup_probe' ? JSON.stringify(probeResult(args[2]!)) : args.includes('-filters') ? ' ... subtitles ... ' : '3.12.12\n' }) })
+    owner.reflect.provide('loader', { create: async () => { throw new Error('unexpected plugin') }, await: async () => {}, *entries() {} })
+    await owner.plugin(Http, { host: '127.0.0.1', port: 0 })
+    await owner.plugin(Setup, { root, repoRoot: resolve('.'), python, entries: [] })
+  })
+  t.after(async () => {
+    release(); releaseOptional(); await app.dispose()
+    for (const [key, value] of Object.entries(previous)) { if (value === undefined) delete process.env[key]; else process.env[key] = value }
+    await rm(root, { recursive: true })
+  })
+  ctx.emit('app/ready')
+  await waitFor(() => started.length === 4)
+  release()
+  await waitFor(() => ctx.setup.snapshot().phase === 'ready')
+
+  // First-run state stays untouched: four required models, all ready, no optional ones.
+  assert.equal(ctx.setup.snapshot().models.length, 4)
+  const models = await (await fetch(`${ctx.http.address}/api/setup/models`)).json() as any
+  assert.equal(models.items.length, 15)
+  const small = models.items.find((item: any) => item.id === 'whisper-small')
+  assert.equal(small.optional, true)
+  assert.equal(small.installed, false)
+  assert.equal(small.status, undefined)
+
+  const state = await (await fetch(`${ctx.http.address}/api/setup`)).json() as any
+  const download = (id: string, action: 'start' | 'pause' = 'start') => fetch(`${ctx.http.address}/api/setup/models/${id}`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'X-dubvibe_mini-Setup': state.token }, body: JSON.stringify({ action }) })
+  assert.equal((await fetch(`${ctx.http.address}/api/setup/models/whisper-small`, { method: 'POST', body: '{}' })).status, 403)
+  assert.equal((await download('not-a-model')).status, 404)
+  assert.equal((await download('whisper-small', 'restart' as any)).status, 422)
+
+  const smallDownloads = () => started.filter(target => target.endsWith('small.pt')).length
+  const starting = await (await download('whisper-small')).json() as any
+  const active = starting.items.find((item: any) => item.id === 'whisper-small')
+  assert.equal(active.busy, true)
+  assert.equal(active.status, 'downloading')
+  await waitFor(() => smallDownloads() === 1)
+
+  const paused = await (await download('whisper-small', 'pause')).json() as any
+  const held = paused.items.find((item: any) => item.id === 'whisper-small')
+  assert.equal(held.busy, false)
+  assert.equal(held.status, 'paused')
+
+  await download('whisper-small')
+  await waitFor(() => smallDownloads() === 2)
+  releaseOptional()
+  const target = join(root, 'models', 'whisper', 'small.pt')
+  await waitFor(() => existsSync(target))
+  const fresh = await (await fetch(`${ctx.http.address}/api/setup/models`)).json() as any
+  const finished = fresh.items.find((item: any) => item.id === 'whisper-small')
+  assert.equal(finished.installed, true)
+  assert.equal(finished.busy, false)
+  assert.equal(finished.status, 'ready')
+  assert.equal(ctx.setup.snapshot().models.length, 4)
+  assert.equal(ctx.setup.snapshot().phase, 'ready')
 })

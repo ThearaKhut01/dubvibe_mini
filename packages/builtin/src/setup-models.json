@@ -4,6 +4,7 @@
     "name": "Whisper",
     "variant": "tiny",
     "purpose": "语音识别",
+    "optional": false,
     "env": "DUBVIBE_MINI_WHISPER_MODELS_DIR",
     "directory": "whisper",
     "files": [
@@ -16,10 +17,198 @@
     ]
   },
   {
+    "id": "whisper-tiny.en",
+    "name": "Whisper",
+    "variant": "tiny.en",
+    "purpose": "语音识别",
+    "optional": true,
+    "env": "DUBVIBE_MINI_WHISPER_MODELS_DIR",
+    "directory": "whisper",
+    "files": [
+      {
+        "path": "tiny.en.pt",
+        "size": 75571315,
+        "sha256": "d3dd57d32accea0b295c96e26691aa14d8822fac7d9d27d5dc00b4ca2826dd03",
+        "url": "https://openaipublic.azureedge.net/main/whisper/models/d3dd57d32accea0b295c96e26691aa14d8822fac7d9d27d5dc00b4ca2826dd03/tiny.en.pt"
+      }
+    ]
+  },
+  {
+    "id": "whisper-base",
+    "name": "Whisper",
+    "variant": "base",
+    "purpose": "语音识别",
+    "optional": true,
+    "env": "DUBVIBE_MINI_WHISPER_MODELS_DIR",
+    "directory": "whisper",
+    "files": [
+      {
+        "path": "base.pt",
+        "size": 145262807,
+        "sha256": "ed3a0b6b1c0edf879ad9b11b1af5a0e6ab5db9205f891f668f8b0e6c6326e34e",
+        "url": "https://openaipublic.azureedge.net/main/whisper/models/ed3a0b6b1c0edf879ad9b11b1af5a0e6ab5db9205f891f668f8b0e6c6326e34e/base.pt"
+      }
+    ]
+  },
+  {
+    "id": "whisper-base.en",
+    "name": "Whisper",
+    "variant": "base.en",
+    "purpose": "语音识别",
+    "optional": true,
+    "env": "DUBVIBE_MINI_WHISPER_MODELS_DIR",
+    "directory": "whisper",
+    "files": [
+      {
+        "path": "base.en.pt",
+        "size": 145261783,
+        "sha256": "25a8566e1d0c1e2231d1c762132cd20e0f96a85d16145c3a00adf5d1ac670ead",
+        "url": "https://openaipublic.azureedge.net/main/whisper/models/25a8566e1d0c1e2231d1c762132cd20e0f96a85d16145c3a00adf5d1ac670ead/base.en.pt"
+      }
+    ]
+  },
+  {
+    "id": "whisper-small",
+    "name": "Whisper",
+    "variant": "small",
+    "purpose": "语音识别",
+    "optional": true,
+    "env": "DUBVIBE_MINI_WHISPER_MODELS_DIR",
+    "directory": "whisper",
+    "files": [
+      {
+        "path": "small.pt",
+        "size": 483617219,
+        "sha256": "9ecf779972d90ba49c06d968637d720dd632c55bbf19d441fb42bf17a411e794",
+        "url": "https://openaipublic.azureedge.net/main/whisper/models/9ecf779972d90ba49c06d968637d720dd632c55bbf19d441fb42bf17a411e794/small.pt"
+      }
+    ]
+  },
+  {
+    "id": "whisper-small.en",
+    "name": "Whisper",
+    "variant": "small.en",
+    "purpose": "语音识别",
+    "optional": true,
+    "env": "DUBVIBE_MINI_WHISPER_MODELS_DIR",
+    "directory": "whisper",
+    "files": [
+      {
+        "path": "small.en.pt",
+        "size": 483615683,
+        "sha256": "f953ad0fd29cacd07d5a9eda5624af0f6bcf2258be67c92b79389873d91e0872",
+        "url": "https://openaipublic.azureedge.net/main/whisper/models/f953ad0fd29cacd07d5a9eda5624af0f6bcf2258be67c92b79389873d91e0872/small.en.pt"
+      }
+    ]
+  },
+  {
+    "id": "whisper-medium",
+    "name": "Whisper",
+    "variant": "medium",
+    "purpose": "语音识别",
+    "optional": true,
+    "env": "DUBVIBE_MINI_WHISPER_MODELS_DIR",
+    "directory": "whisper",
+    "files": [
+      {
+        "path": "medium.pt",
+        "size": 1528008539,
+        "sha256": "345ae4da62f9b3d59415adc60127b97c714f32e89e936602e85993674d08dcb1",
+        "url": "https://openaipublic.azureedge.net/main/whisper/models/345ae4da62f9b3d59415adc60127b97c714f32e89e936602e85993674d08dcb1/medium.pt"
+      }
+    ]
+  },
+  {
+    "id": "whisper-medium.en",
+    "name": "Whisper",
+    "variant": "medium.en",
+    "purpose": "语音识别",
+    "optional": true,
+    "env": "DUBVIBE_MINI_WHISPER_MODELS_DIR",
+    "directory": "whisper",
+    "files": [
+      {
+        "path": "medium.en.pt",
+        "size": 1528006491,
+        "sha256": "d7440d1dc186f76616474e0ff0b3b6b879abc9d1a4926b7adfa41db2d497ab4f",
+        "url": "https://openaipublic.azureedge.net/main/whisper/models/d7440d1dc186f76616474e0ff0b3b6b879abc9d1a4926b7adfa41db2d497ab4f/medium.en.pt"
+      }
+    ]
+  },
+  {
+    "id": "whisper-large-v1",
+    "name": "Whisper",
+    "variant": "large-v1",
+    "purpose": "语音识别",
+    "optional": true,
+    "env": "DUBVIBE_MINI_WHISPER_MODELS_DIR",
+    "directory": "whisper",
+    "files": [
+      {
+        "path": "large-v1.pt",
+        "size": 3086999982,
+        "sha256": "e4b87e7e0bf463eb8e6956e646f1e277e901512310def2c24bf0e11bd3c28e9a",
+        "url": "https://openaipublic.azureedge.net/main/whisper/models/e4b87e7e0bf463eb8e6956e646f1e277e901512310def2c24bf0e11bd3c28e9a/large-v1.pt"
+      }
+    ]
+  },
+  {
+    "id": "whisper-large-v2",
+    "name": "Whisper",
+    "variant": "large-v2",
+    "purpose": "语音识别",
+    "optional": true,
+    "env": "DUBVIBE_MINI_WHISPER_MODELS_DIR",
+    "directory": "whisper",
+    "files": [
+      {
+        "path": "large-v2.pt",
+        "size": 3086999982,
+        "sha256": "81f7c96c852ee8fc832187b0132e569d6c3065a3252ed18e56effd0b6a73e524",
+        "url": "https://openaipublic.azureedge.net/main/whisper/models/81f7c96c852ee8fc832187b0132e569d6c3065a3252ed18e56effd0b6a73e524/large-v2.pt"
+      }
+    ]
+  },
+  {
+    "id": "whisper-large-v3",
+    "name": "Whisper",
+    "variant": "large-v3",
+    "purpose": "语音识别",
+    "optional": true,
+    "env": "DUBVIBE_MINI_WHISPER_MODELS_DIR",
+    "directory": "whisper",
+    "files": [
+      {
+        "path": "large-v3.pt",
+        "size": 3087371615,
+        "sha256": "e5b1a55b89c1367dacf97e3e19bfd829a01529dbfdeefa8caeb59b3f1b81dadb",
+        "url": "https://openaipublic.azureedge.net/main/whisper/models/e5b1a55b89c1367dacf97e3e19bfd829a01529dbfdeefa8caeb59b3f1b81dadb/large-v3.pt"
+      }
+    ]
+  },
+  {
+    "id": "whisper-large-v3-turbo",
+    "name": "Whisper",
+    "variant": "large-v3-turbo",
+    "purpose": "语音识别",
+    "optional": true,
+    "env": "DUBVIBE_MINI_WHISPER_MODELS_DIR",
+    "directory": "whisper",
+    "files": [
+      {
+        "path": "large-v3-turbo.pt",
+        "size": 1617941637,
+        "sha256": "aff26ae408abcba5fbf8813c21e62b0941638c5f6eebfb145be0c9839262a19a",
+        "url": "https://openaipublic.azureedge.net/main/whisper/models/aff26ae408abcba5fbf8813c21e62b0941638c5f6eebfb145be0c9839262a19a/large-v3-turbo.pt"
+      }
+    ]
+  },
+  {
     "id": "voxcpm",
     "name": "VoxCPM2",
     "variant": "",
     "purpose": "声音克隆",
+    "optional": false,
     "env": "DUBVIBE_MINI_VOXCPM_MODEL_DIR",
     "directory": "voxcpm/VoxCPM2",
     "files": [
@@ -72,6 +261,7 @@
     "name": "Demucs",
     "variant": "htdemucs",
     "purpose": "人声分离",
+    "optional": false,
     "env": "DUBVIBE_MINI_DEMUCS_MODELS_DIR",
     "directory": "demucs",
     "files": [
@@ -88,6 +278,7 @@
     "name": "Qwen3 Aligner",
     "variant": "0.6B",
     "purpose": "字幕对齐",
+    "optional": false,
     "env": "DUBVIBE_MINI_FORCED_ALIGNER_MODEL_DIR",
     "directory": "qwen3-forced-aligner/Qwen3-ForcedAligner-0.6B-hf",
     "files": [

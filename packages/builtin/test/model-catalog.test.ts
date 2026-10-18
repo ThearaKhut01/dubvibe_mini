@@ -18,6 +18,21 @@ test('catalog lists every manifest model and reports which files are present', a
   assert.deepEqual(items.map(item => item.id), modelManifest.map(model => model.id))
   assert.equal(items.find(item => item.id === 'whisper')!.installed, true)
   assert.equal(items.find(item => item.id === 'demucs')!.installed, false)
+  assert.equal(items.find(item => item.id === 'whisper')!.optional, false)
+  assert.equal(items.find(item => item.id === 'whisper-small')!.optional, true)
+})
+
+test('catalog carries the transfer progress of tracked models only', async () => {
+  const tracked = { status: 'downloading' as const, received: 4096, total: 483617219, speed: 1024 }
+  const items = catalogFor({ folderFor: id => join(tmpdir(), 'dubvibe_mini-progress', id), busy: () => true,
+    progress: id => (id === 'whisper-small' ? tracked : undefined) })
+  const small = items.find(item => item.id === 'whisper-small')!
+  assert.equal(small.busy, true)
+  assert.equal(small.status, 'downloading')
+  assert.equal(small.received, 4096)
+  assert.equal(small.total, 483617219)
+  assert.equal(small.speed, 1024)
+  assert.equal(items.find(item => item.id === 'whisper-base')!.status, undefined)
 })
 
 test('remove deletes only the model manifest files, never other files in the folder', async () => {

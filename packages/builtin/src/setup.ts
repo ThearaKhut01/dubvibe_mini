@@ -8,11 +8,10 @@ import { readJson, type HttpRequest } from './http.js'
 import { DownloadClient, fileSize } from './setup-download.js'
 import { EnvironmentSetup, type EnvironmentConfig } from './setup-environment.js'
 import modelManifest from './setup-models.json' with { type: 'json' }
-import { catalogFor, removeFiles } from './setup-catalog.js'
+import { catalogFor, removeFiles, type ModelProgress, type ModelStatus } from './setup-catalog.js'
 import { readEnv } from './env'
 
 export interface SetupConfig extends EnvironmentConfig { entries: EntryOptions[] }
-type ModelStatus = 'pending' | 'downloading' | 'paused' | 'ready' | 'failed'
 export interface ModelDownload {
   id: string; name: string; variant: string; purpose: string; status: ModelStatus;
   received: number; total: number; speed: number; error?: string
@@ -42,7 +41,9 @@ export default class SetupService extends Service {
   private preparing?: Promise<void>
   private finishing?: Promise<void>
   private jobs = new Map<string, { controller: AbortController; promise: Promise<void> }>()
-  private models: ModelDownload[] = modelManifest.map(model => ({ id: model.id, name: model.name, variant: model.variant, purpose: model.purpose, status: 'pending', received: 0, total: model.files.reduce((sum, file) => sum + file.size, 0), speed: 0 }))
+  // First-run gates only required models; optional entries (extra Whisper sizes) are downloaded on demand.
+  private models: ModelDownload[] = modelManifest.filter(model => !model.optional).map(model => ({ id: model.id, name: model.name, variant: model.variant, purpose: model.purpose, status: 'pending', received: 0, total: model.files.reduce((sum, file) => sum + file.size, 0), speed: 0 }))
+  private optionalModels = new Map<string, ModelDownload>()
   constructor(ctx: Context, private config: SetupConfig) {
     super(ctx, 'setup')
     this.environment = new EnvironmentSetup(ctx, config, this.client, this.stopping.signal)
@@ -66,6 +67,19 @@ export default class SetupService extends Service {
     this.ctx.effect(() => this.ctx.http.register('GET', '/api/setup/models', request => this.ctx.http.json(request, 200, { items: this.catalog() })))
     this.ctx.effect(() => this.ctx.http.register('DELETE', '/api/setup/models/:id', async request => {
       await this.remove(request.params!.id!)
+      this.ctx.http.json(request, 200, { items: this.catalog() })
+    }))
+    this.ctx.effect(() => this.ctx.http.register('POST', '/api/setup/models/:id', async request => {
+      const id = request.params!.id!
+      if (!modelManifest.some(item => item.id === id)) throw new AppError('NOT_FOUND', 'Unknown model.', 404)
+      if (this.phase === 'environment' || this.phase === 'starting') throw new AppError('ENVIRONMENT_NOT_READY', '请等待环境准备完成。', 409)
+      const { action = 'start' } = await readJson(request)
+      if (!['start', 'pause'].includes(action)) throw new AppError('INVALID_INPUT', 'Invalid model download action.', 422)
+      if (action === 'pause') {
+        const job = this.jobs.get(id)
+        if (job) { job.controller.abort(new Error('Paused by user')); await job.promise }
+        else if (!this.models.some(model => model.id === id)) this.optionalModels.delete(id)
+      } else this.download(id)
       this.ctx.http.json(request, 200, { items: this.catalog() })
     }))
     this.ctx.effect(() => this.ctx.http.register('POST', '/api/setup', async request => {
@@ -92,7 +106,14 @@ export default class SetupService extends Service {
   }
   // Catalog and removal share the same folder rule as the first-run download (root()).
   catalog() {
-    return catalogFor({ folderFor: id => this.root(id), busy: id => this.jobs.has(id) })
+    return catalogFor({
+      folderFor: id => this.root(id),
+      busy: id => this.jobs.has(id),
+      progress: id => {
+        const model = this.models.find(item => item.id === id) ?? this.optionalModels.get(id)
+        return model && model.status !== 'pending' ? this.progressOf(model) : undefined
+      },
+    })
   }
   async remove(id: string) {
     await removeFiles(this.root(id), id, { busy: this.jobs.has(id) })
@@ -115,6 +136,18 @@ export default class SetupService extends Service {
     const model = modelManifest.find(model => model.id === id)!
     const configured = readEnv(model.env.replace(/^DUBVIBE_MINI_/, ''))
     return configured ? localPath(configured) : join(this.config.root, 'models', model.directory)
+  }
+  // Returns the tracked download state of one model, creating an on-demand record for optional entries.
+  private modelFor(id: string): ModelDownload {
+    const known = this.models.find(item => item.id === id) ?? this.optionalModels.get(id)
+    if (known) return known
+    const definition = modelManifest.find(item => item.id === id)!
+    const model: ModelDownload = { id: definition.id, name: definition.name, variant: definition.variant, purpose: definition.purpose, status: 'pending', received: 0, total: definition.files.reduce((sum, file) => sum + file.size, 0), speed: 0 }
+    this.optionalModels.set(definition.id, model)
+    return model
+  }
+  private progressOf(model: ModelDownload): ModelProgress {
+    return { status: model.status, received: model.received, total: model.total, speed: model.speed, error: model.error }
   }
   private fail(error: unknown) {
     if (cancelled(error, this.stopping.signal)) { this.ctx.logger.info('Environment preparation stopped with the application.'); return }
@@ -140,7 +173,7 @@ export default class SetupService extends Service {
   }
   private download(id: string) {
     if (this.jobs.has(id)) return
-    const model = this.models.find(item => item.id === id)!
+    const model = this.modelFor(id)
     const definition = modelManifest.find(item => item.id === id)!
     const controller = new AbortController()
     const signal = AbortSignal.any([this.stopping.signal, controller.signal])
