@@ -1,0 +1,1 @@
+{"detected_language": "en", "segments": [{"id": "first", "start_ms": 500, "end_ms": 1000, "text": "First."}, {"id": "last", "start_ms": 1100, "end_ms": 1700, "text": "Last."}]}
