@@ -111,7 +111,7 @@ def test_real_mix_uses_only_separated_background_and_keeps_its_tail(context):
 
 def test_real_mix_fails_on_speech_overflow_without_trimming(context):
     require_ffmpeg()
-    write_tone(context.work_dir / "tts/000001.wav", 9000, 440)
+    write_tone(context.work_dir / "tts/000001.wav", 14000, 440)
     write_manifest(context)
     with pytest.raises(ApiError) as error:
         mix.run(context, lambda value, message: None)
@@ -160,8 +160,8 @@ def test_real_mix_borrows_earlier_silence_to_keep_the_complete_tail(context):
 def test_real_mix_fails_when_combined_complete_clips_exceed_all_available_time(context):
     require_ffmpeg()
     context.input_files["media_info"].write_text(json.dumps({"duration_ms": 1700, "width": 320, "height": 180}))
-    write_tone(context.work_dir / "tts/000001.wav", 1000, 440)
-    write_tone(context.work_dir / "tts/000002.wav", 2000, 660)
+    write_tone(context.work_dir / "tts/000001.wav", 4500, 440)
+    write_tone(context.work_dir / "tts/000002.wav", 4500, 660)
     write_manifest(context)
 
     with pytest.raises(ApiError) as error:
@@ -169,10 +169,64 @@ def test_real_mix_fails_when_combined_complete_clips_exceed_all_available_time(c
 
     assert error.value.content["error"]["code"] == "AUDIO_EXCEEDS_VIDEO"
     adjusted = [sf.info(context.work_dir / f"adjusted/{index:04d}.wav") for index in (1, 2)]
-    assert all(clip.frames < 1700 * 48 for clip in adjusted)
+    # Even the final attempt sits at the 2x intelligibility floor and still
+    # overflows the video.
+    assert all(clip.frames == pytest.approx(4500 * 0.5 * 48, rel=0.01) for clip in adjusted)
     assert sum(clip.frames for clip in adjusted) > 1700 * 48
     assert not (context.work_dir / "mixed.wav").exists()
     assert not (context.work_dir / "alignment.json").exists()
+
+
+def test_real_mix_speeds_speech_up_equally_when_it_only_just_overflows(context):
+    require_ffmpeg()
+    # 1000 ms + 2000 ms clips need more room than the production bounds give
+    # (sum at the old caps: 86.4k of 81.6k samples), yet fit before the 2x
+    # intelligibility floor, so the mix must recover instead of failing.
+    context.input_files["media_info"].write_text(json.dumps({"duration_ms": 1700, "width": 320, "height": 180}))
+    write_tone(context.work_dir / "tts/000001.wav", 1000, 440)
+    write_tone(context.work_dir / "tts/000002.wav", 2000, 660)
+    write_manifest(context)
+
+    result = mix.run(context, lambda value, message: None)
+
+    samples, rate = sf.read(result.output_files["mixed_audio"], dtype="float32", always_2d=True)
+    assert rate == 48000 and samples.shape == (1700 * 48, 2)
+    timeline = Alignment.model_validate_json(result.output_files["alignment"].read_bytes())
+    adjusted = [sf.read(context.work_dir / f"adjusted/{index:04d}.wav", always_2d=True)[0] for index in (1, 2)]
+    total_speech_frames = sum(len(clip) for clip in adjusted)
+    assert total_speech_frames < len(samples)
+    # The rescue pass compresses further, then borrows the opening silence:
+    # the complete clips stay contiguous and end with the video.
+    start = len(samples) - total_speech_frames
+    assert not samples[:start].any()
+    cursor = start
+    for clip in adjusted:
+        assert np.allclose(samples[cursor:cursor + len(clip)], clip, atol=1 / 32768)
+        cursor += len(clip)
+    assert cursor == len(samples)
+    assert timeline.segments[0].dubbed_end_ms == timeline.segments[1].dubbed_start_ms
+    assert timeline.segments[-1].dubbed_end_ms == 1700
+    assert [(item.source_start_ms, item.source_end_ms) for item in timeline.segments] == [(500, 1000), (1100, 1700)]
+
+
+def test_trim_speech_removes_padding_but_keeps_spoken_audio():
+    speech = 0.2 * np.sin(2 * np.pi * 440 * np.arange(48000) / 48000)
+    samples = np.stack([np.concatenate([np.zeros(20000), speech, np.zeros(20)])] * 2, axis=1).astype(np.float32)
+    trimmed = mix._trim_speech(samples)
+    # Speech starts at frame 20001 (the exact-zero first sample is quiet), so
+    # only 40 ms of breathing room before it and the clipped-at-array-end pad
+    # after it remain; the 0.4 s of head silence is gone.
+    start = 20001 - round(0.04 * mix.SAMPLE_RATE)
+    assert np.array_equal(trimmed, samples[start:])
+    # Trailing pad is capped by the end of the clip.
+    assert len(trimmed) == len(samples) - start
+    assert all(np.max(np.abs(block)) == 0.0 for block in (trimmed[:1], trimmed[-1:]))
+
+
+def test_trim_speech_collapses_all_silent_clips_to_a_breath():
+    silence = np.zeros((48000, 2), dtype=np.float32)
+    assert len(mix._trim_speech(silence)) == round(0.05 * mix.SAMPLE_RATE)
+    assert len(mix._trim_speech(np.zeros((100, 2), dtype=np.float32))) == 100
 
 
 def test_overlapping_source_speech_is_explicitly_unsupported(monkeypatch, context):

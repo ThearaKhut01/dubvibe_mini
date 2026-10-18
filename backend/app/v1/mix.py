@@ -1,13 +1,16 @@
 """Bounded speech timing on the unchanged video timeline.
 
 The duration multiplier is base * local, where base is
-clamp(0.99 * sum(source durations) / sum(TTS durations), 0.8, 1.2), and local
-is clamp((source_end - scheduled_start) / (TTS_duration * base), 0.75, 1.25).
-These are the production pipeline's bounds. FFmpeg atempo uses the reciprocal
-multiplier. Scheduling always advances by actual output samples, never by the
-estimated duration or the old source end. The final placement works backward
-from the video end, borrowing preceding silence when the tail needs room.
-No speech samples are trimmed or re-timed by that placement.
+clamp(0.99 * sum(source durations) / sum(spoken TTS durations), 0.8, 1.2), and
+local is clamp((source_end - scheduled_start) / (TTS_duration * base), 0.75,
+1.25). These are the production pipeline's bounds; leading/trailing TTS
+silence is removed first so only spoken audio is paced. Scheduling always
+advances by actual output samples, never by the estimated duration or the old
+source end. The final placement works backward from the video end, borrowing
+preceding silence when the tail needs room. If the whole speech chain still
+overflows the video, a shared factor speeds every clip up in equal proportion
+until it fits or the 2x intelligibility floor is reached; only then does the
+mix abandon the task. No speech samples are trimmed or re-timed by placement.
 """
 
 from __future__ import annotations
@@ -78,6 +81,26 @@ def _decode(context: StageContext, source: Path, destination: Path, *, duration_
     return samples
 
 
+def _trim_speech(samples: np.ndarray) -> np.ndarray:
+    """Cut leading/trailing near-silence so pacing only counts spoken audio.
+
+    TTS clips typically carry trailing encoder/provider padding; keeping it
+    would inflate durations and can push the speech chain past the video end.
+    A small pad is kept so soft onsets and releases are preserved.
+    """
+    if not len(samples):
+        return samples
+    peak = float(np.max(np.abs(samples)))
+    if peak <= 0:
+        return samples[:min(len(samples), max(1, round(0.05 * SAMPLE_RATE)))]
+    limit = max(peak * 0.01, 1e-4)
+    active = np.nonzero(np.max(np.abs(samples), axis=1) > limit)[0]
+    if not len(active):
+        return samples[:max(1, round(0.05 * SAMPLE_RATE))]
+    pad = round(0.04 * SAMPLE_RATE)
+    return samples[max(0, int(active[0]) - pad):min(len(samples), int(active[-1]) + 1 + pad)]
+
+
 def run(context: StageContext, progress: Callable[[float | None, str], None]) -> Completed:
     context.check_cancel()
     if context.config.output_mode == "subtitles":
@@ -107,31 +130,58 @@ def run(context: StageContext, progress: Callable[[float | None, str], None]) ->
     adjusted.mkdir(exist_ok=True)
     total_samples = round(duration * SAMPLE_RATE / 1000)
     final_audio = np.zeros((total_samples, CHANNELS), dtype=np.float32)
-    base = min(1.2, max(0.8, 0.99 * sum(segment.end_ms - segment.start_ms for segment in transcript.segments)
-                        / sum(milliseconds for _, milliseconds in inputs.values())))
-    previous_end = 0
-    planned = []
+    # Decode once per clip and strip leading/trailing near-silence (TTS output
+    # typically ends with padding) so pacing and fit use the spoken length only.
+    raw_samples = {}
     for index, segment in enumerate(transcript.segments):
         context.check_cancel()
-        path, raw_duration = inputs[segment.id]
-        start_sample = max(round(segment.start_ms * SAMPLE_RATE / 1000), previous_end)
-        start_ms = start_sample * 1000 / SAMPLE_RATE
-        local = min(1.25, max(0.75, (segment.end_ms - start_ms) / (raw_duration * base)))
-        samples = _decode(context, path, adjusted / f"{index + 1:04d}.wav", duration_ratio=base * local)
-        end_sample = start_sample + len(samples)
-        planned.append([start_sample, len(samples)])
-        previous_end = end_sample
-        progress((index + 1) / (len(transcript.segments) + 1), f"Adjusted {index + 1}/{len(transcript.segments)} speech clips")
+        path, _ = inputs[segment.id]
+        trimmed = _trim_speech(_decode(context, path, adjusted / f"raw-{index + 1:04d}.wav"))
+        # Persist the trimmed audio: the speed pass below re-reads this file.
+        sf.write(adjusted / f"raw-{index + 1:04d}.wav", trimmed, SAMPLE_RATE, subtype="FLOAT")
+        raw_samples[segment.id] = trimmed
+        progress((index + 1) / (2 * len(transcript.segments)), f"Adjusted {index + 1}/{len(transcript.segments)} speech clips")
+    base = min(1.2, max(0.8, 0.99 * sum(segment.end_ms - segment.start_ms for segment in transcript.segments)
+                        / sum(len(samples) * 1000 / SAMPLE_RATE for samples in raw_samples.values())))
 
     # Place every complete clip before allocating its final interval. Moving a
     # tail cluster into earlier silence preserves audio, rate and video length.
-    next_start = total_samples
-    for item in reversed(planned):
-        item[0] = min(item[0], next_start - item[1])
-        if item[0] < 0:
-            raise ApiError(422, "AUDIO_EXCEEDS_VIDEO", "The complete dubbed speech does not fit the source video.",
+    # Scheduling keeps the production bounds; the shared `extra` factor relaxes
+    # them in equal proportion until the whole speech chain fits the video.
+    RATIO_FLOOR = 0.5  # atempo limit: speech faster than 2x loses intelligibility
+
+    planned = []
+    extra = 1.0
+    for _attempt in range(3):
+        planned = []
+        previous_end = 0
+        counts = []
+        for index, segment in enumerate(transcript.segments):
+            context.check_cancel()
+            trimmed_ms = len(raw_samples[segment.id]) * 1000 / SAMPLE_RATE
+            start_sample = max(round(segment.start_ms * SAMPLE_RATE / 1000), previous_end)
+            start_ms = start_sample * 1000 / SAMPLE_RATE
+            local = min(1.25, max(0.75, (segment.end_ms - start_ms) / (trimmed_ms * base)))
+            ratio = max(RATIO_FLOOR, base * local / extra)
+            samples = _decode(context, adjusted / f"raw-{index + 1:04d}.wav", adjusted / f"{index + 1:04d}.wav", duration_ratio=ratio)
+            counts.append(len(samples))
+            planned.append([start_sample, len(samples)])
+            previous_end = start_sample + len(samples)
+            progress((len(transcript.segments) + index + 1) / (2 * len(transcript.segments)),
+                     f"Adjusted {index + 1}/{len(transcript.segments)} speech clips")
+        next_start = total_samples
+        for index in reversed(range(len(planned))):
+            planned[index][0] = min(planned[index][0], next_start - counts[index])
+            next_start = planned[index][0]
+        if next_start >= 0:
+            break
+        if _attempt == 2:
+            raise ApiError(422, "AUDIO_EXCEEDS_VIDEO",
+                           "The complete dubbed speech does not fit the source video even at the maximum "
+                           "speech speed; use a shorter translation or a different TTS voice.",
                            stage="mix", action="adjust_settings")
-        next_start = item[0]
+        extra = extra * sum(counts) / total_samples * 1.02
+
     aligned = []
     for index, (segment, (start_sample, count)) in enumerate(zip(transcript.segments, planned, strict=True)):
         context.check_cancel()
