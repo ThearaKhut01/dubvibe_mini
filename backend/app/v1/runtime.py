@@ -146,6 +146,34 @@ def _voxcpm_models(devices: list[dict[str, Any]]) -> tuple[list[dict[str, Any]],
     return models, None if models else "本地 VoxCPM2 权重或 tokenizer 资产不完整。"
 
 
+# Edge TTS synthesizes on Microsoft's public speech endpoint with preset voices;
+# it sends only text and needs no subscription key or local model.
+EDGE_MODEL = "Edge TTS"
+
+# Curated offline voice list; the service itself validates new voices at run time.
+EDGE_VOICES = (
+    ("en", "en-US-AriaNeural", "Aria (US English)"), ("en", "en-US-GuyNeural", "Guy (US English)"),
+    ("en", "en-US-AndrewNeural", "Andrew (US English)"), ("en", "en-US-EmmaNeural", "Emma (US English)"),
+    ("en", "en-GB-SoniaNeural", "Sonia (British English)"), ("en", "en-GB-RyanNeural", "Ryan (British English)"),
+    ("zh", "zh-CN-XiaoxiaoNeural", "晓晓（简体中文）"), ("zh", "zh-CN-YunxiNeural", "云希（简体中文）"),
+    ("zh", "zh-CN-XiaoyiNeural", "晓伊（简体中文）"), ("zh", "zh-CN-YunjianNeural", "云健（简体中文）"),
+    ("zh", "zh-HK-HiuMaanNeural", "曉曼（香港粵語）"), ("zh", "zh-TW-HsiaoChenNeural", "曉臻（台灣國語）"),
+    ("ja", "ja-JP-NanamiNeural", "七海（日语）"), ("ja", "ja-JP-KeitaNeural", "圭太（日语）"),
+)
+
+
+def _edge_models(_devices: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], str | None]:
+    if importlib.util.find_spec("edge_tts") is None:
+        return [], "Edge TTS 需要安装 edge-tts。"
+    if shutil.which(ffmpeg_binary()) is None or shutil.which(ffprobe_binary()) is None:
+        return [], "本地媒体处理需要可执行的 FFmpeg 和 FFprobe。"
+    model = _model(EDGE_MODEL, ["remote"], [], list(LANGUAGES))
+    model["voice_modes"] = ["preset"]
+    model["voices"] = [{"id": voice_id, "name": name, "languages": [language]}
+                       for language, voice_id, name in EDGE_VOICES]
+    return [model], None
+
+
 def _demucs_models(devices: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], str | None]:
     # The child selects this vendored module path, independently of site-packages.
     source = Path(__file__).resolve().parents[3] / "submodule" / "demucs"
@@ -209,20 +237,23 @@ def runtime_info() -> dict[str, Any]:
 def probe_capability(adapter: str, *, connections: Sequence[Mapping[str, Any]] = (),
                      translation_model: str | None = None) -> dict[str, Any]:
     """Inspect exactly one installed provider; no inference or network access."""
-    probes = {"whisper": ("asr", _whisper_models), "voxcpm": ("tts", _voxcpm_models),
-              "demucs": ("separation", _demucs_models),
-              "qwen_forced_aligner": ("subtitle_alignment", _subtitle_alignment_models)}
-    remote = adapter in TRANSLATION_ADAPTERS
-    if remote:
-        kind = "translation"
+    remote_kinds = {"openai": "translation", "gemini": "translation", "edge": "tts"}
+    kind = remote_kinds.get(adapter)
+    execution = "remote" if adapter in remote_kinds else "local"
+    if kind == "translation":
         models, reason = _translation_models(connections, translation_model)
+    elif kind == "tts":
+        models, reason = _edge_models(_detect_devices())
     else:
+        probes = {"whisper": ("asr", _whisper_models), "voxcpm": ("tts", _voxcpm_models),
+                  "demucs": ("separation", _demucs_models),
+                  "qwen_forced_aligner": ("subtitle_alignment", _subtitle_alignment_models)}
         if adapter not in probes:
             raise ValueError(f"Unknown Python provider: {adapter}")
         kind, probe = probes[adapter]
         models, reason = probe(_detect_devices())
-    return {"adapter": adapter, "capability": kind, "execution": "remote" if remote else "local",
-            "available": bool(models), "unavailable_reason": reason, "requires_api_key": remote,
-            "models": models, "data_sent": ["text"] if remote else [],
+    return {"adapter": adapter, "capability": kind, "execution": execution,
+            "available": bool(models), "unavailable_reason": reason, "requires_api_key": kind == "translation",
+            "models": models, "data_sent": ["text"] if execution == "remote" else [],
             "remote_operations": {"submit_mode": "sync", "can_poll": False, "can_cancel": False,
-                                  "can_lookup_request_key": False} if remote else None}
+                                  "can_lookup_request_key": False} if execution == "remote" else None}

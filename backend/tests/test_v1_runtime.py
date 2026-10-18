@@ -20,7 +20,7 @@ def clear_device_cache():
 def probe_all(*, connections=(), translation_model=None):
     return {**runtime.runtime_info(), "capabilities": [
         runtime.probe_capability(adapter, connections=connections, translation_model=translation_model)
-        for adapter in ("whisper", "openai", "voxcpm", "demucs", "qwen_forced_aligner")
+        for adapter in ("whisper", "openai", "voxcpm", "demucs", "qwen_forced_aligner", "edge")
     ]}
 
 
@@ -35,10 +35,12 @@ def test_catalogue_does_not_advertise_legacy_models_or_load_them(monkeypatch):
     assert result["platform"] == "macos"
     assert result["arch"] == "arm64"
     assert [item["id"] for item in result["devices"]] == ["cpu"]
-    assert {item["adapter"] for item in result["capabilities"]} == {"whisper", "openai", "voxcpm", "demucs", "qwen_forced_aligner"}
+    assert {item["adapter"] for item in result["capabilities"]} == {"whisper", "openai", "voxcpm", "demucs", "qwen_forced_aligner", "edge"}
     assert all(not item["available"] and item["unavailable_reason"] and not item["models"]
                for item in result["capabilities"])
     assert result["instance_id"] == probe_all()["instance_id"]
+    edge = next(item for item in result["capabilities"] if item["adapter"] == "edge")
+    assert not edge["available"] and edge["models"] == [] and "edge-tts" in edge["unavailable_reason"]
     assert "voxcpm" not in sys.modules
     assert "whisper" not in sys.modules
 
@@ -119,6 +121,11 @@ def test_real_catalogue_reads_local_metadata_and_remote_config_without_model_or_
                                                  "can_cancel": False, "can_lookup_request_key": False}
     assert not tts["available"] and not separation["available"]
     assert tts["models"] == separation["models"] == []
+    edge = result["capabilities"][5]
+    assert edge["available"] and edge["unavailable_reason"] is None and edge["capability"] == "tts"
+    assert edge["execution"] == "remote" and edge["data_sent"] == ["text"]
+    assert edge["requires_api_key"] is False and edge["models"][0]["id"] == "Edge TTS"
+    assert edge["remote_operations"] is not None
 
 
 def test_translation_models_use_configured_candidates_and_preserve_saved_default(installed_runtime, monkeypatch):
@@ -221,6 +228,17 @@ def test_all_capabilities_ready_reads_assets_without_loading_models_or_network(a
     monkeypatch.setitem(sys.modules, "demucs", SimpleNamespace(load_model=forbidden))
     result = probe_all(connections=all_model_assets)
     assert all(item["available"] and item["unavailable_reason"] is None for item in result["capabilities"][:4])
+    edge = result["capabilities"][5]
+    assert edge["models"] == [{
+        "id": "Edge TTS", "devices": ["remote"], "source_languages": [], "target_languages": ["en", "zh", "ja"],
+        "voice_modes": ["preset"],
+        "voices": [{"id": voice_id, "name": name, "languages": [language]}
+                   for language, voice_id, name in runtime.EDGE_VOICES],
+        "input_limits": {"max_audio_duration_ms": None, "max_text_chars": None, "max_reference_duration_ms": None},
+    }]
+    assert edge["data_sent"] == ["text"] and edge["requires_api_key"] is False
+    assert edge["remote_operations"] == {"submit_mode": "sync", "can_poll": False,
+                                        "can_cancel": False, "can_lookup_request_key": False}
     tts_capability, separation = result["capabilities"][2:4]
     assert tts_capability["models"] == [{
         "id": "VoxCPM2", "devices": ["cpu", "cuda:0"], "source_languages": ["en", "zh", "ja"],
@@ -319,7 +337,7 @@ def test_runtime_limits_are_independent_and_invalid_configuration_is_visible(mon
 
 def test_optional_qwen_missing_is_reported_by_its_own_probe(all_model_assets):
     result = probe_all(connections=all_model_assets)
-    qwen = result["capabilities"][-1]
+    qwen = next(item for item in result["capabilities"] if item["adapter"] == "qwen_forced_aligner")
     assert qwen["capability"] == "subtitle_alignment" and not qwen["available"]
 
 
@@ -334,7 +352,7 @@ def test_qwen_catalogue_uses_metadata_only_and_limits_each_dubbed_clip(all_model
     monkeypatch.setenv("YOUDUB_FORCED_ALIGNER_MODEL_DIR", str(root))
     monkeypatch.setattr(forced_alignment, "align", lambda *args, **kwargs: pytest.fail("Runtime must not run alignment"))
     result = probe_all(connections=all_model_assets)
-    qwen = result["capabilities"][-1]
+    qwen = next(item for item in result["capabilities"] if item["adapter"] == "qwen_forced_aligner")
     assert qwen["available"] and qwen["execution"] == "local" and qwen["data_sent"] == []
     assert qwen["models"] == [{
         "id": "Qwen3-ForcedAligner-0.6B-hf", "devices": ["cpu", "cuda:0"], "source_languages": [],
@@ -343,7 +361,7 @@ def test_qwen_catalogue_uses_metadata_only_and_limits_each_dubbed_clip(all_model
     }]
     (root / "model.safetensors").write_bytes(b"")
     result = probe_all(connections=all_model_assets)
-    assert not result["capabilities"][-1]["available"]
+    assert not next(item for item in result["capabilities"] if item["adapter"] == "qwen_forced_aligner")["available"]
 
 
 @pytest.mark.parametrize("version", ["5.16.0", "6.0.0", "5.17.0rc1", "bad", None])
@@ -355,7 +373,8 @@ def test_qwen_requires_supported_transformers_without_importing_model(all_model_
             raise runtime.importlib.metadata.PackageNotFoundError(name)
         return version
     monkeypatch.setattr(runtime.importlib.metadata, "version", installed)
-    qwen = probe_all(connections=all_model_assets)["capabilities"][-1]
+    qwen = probe_all(connections=all_model_assets)
+    qwen = next(item for item in qwen["capabilities"] if item["adapter"] == "qwen_forced_aligner")
     assert not qwen["available"] and "transformers>=5.17,<6" in qwen["unavailable_reason"]
 
 

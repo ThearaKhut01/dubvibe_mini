@@ -99,7 +99,7 @@ First startup downloads Whisper tiny, VoxCPM2, Demucs htdemucs and Qwen3 Aligner
 | --- | --- | --- |
 | Speech recognition | Whisper | `models/whisper/`, for example `tiny.pt`; also requires the `punkt_tab` data installed above |
 | Translation | OpenAI-compatible API | Configure the connection, key and model in Settings |
-| Speech generation | VoxCPM2 | `models/voxcpm/VoxCPM2/` |
+| Speech generation | VoxCPM2 | `models/voxcpm/VoxCPM2/`; Edge TTS is a preset-voice alternative with no local model |
 | Vocal separation | Demucs htdemucs | `models/demucs/955717e8-8726e21a.th` |
 | Subtitle alignment | Qwen3 Forced Aligner | `models/qwen3-forced-aligner/Qwen3-ForcedAligner-0.6B-hf/` |
 

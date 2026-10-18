@@ -164,19 +164,22 @@ class Operation:
         from backend.app.v1 import tts
         context = self.context("tts", {"transcript": self.json_file("transcript"), "translation": self.json_file("translation")})
         references = self.inputs.get("references")
-        if not isinstance(references, list) or not references:
-            raise WorkerError("INVALID_INPUT", "VoxCPM requires explicit prepared references.")
         prepared = {}
-        for ref in references:
-            segment_id = ref.get("segmentId") if isinstance(ref, dict) else None
-            if not isinstance(segment_id, str) or not segment_id.strip():
-                raise WorkerError("INVALID_INPUT", "Each voice reference requires a non-empty segmentId.")
-            if segment_id in prepared:
-                raise WorkerError("INVALID_INPUT", f"Duplicate reference for segment {segment_id}.")
-            text = ref.get("transcript")
-            if not isinstance(text, str) or not text.strip():
-                raise WorkerError("INVALID_INPUT", f"Reference transcript is missing for segment {segment_id}.")
-            prepared[segment_id] = {"path": self.path(ref.get("audio")), "text": text}
+        voice_mode = getattr(getattr(context.config.tts, "voice", None), "mode", None)
+        if not isinstance(references, list) or not references:
+            if voice_mode == "source_clone":
+                raise WorkerError("INVALID_INPUT", "Source cloned voices require explicit prepared references.")
+        else:
+            for ref in references:
+                segment_id = ref.get("segmentId") if isinstance(ref, dict) else None
+                if not isinstance(segment_id, str) or not segment_id.strip():
+                    raise WorkerError("INVALID_INPUT", "Each voice reference requires a non-empty segmentId.")
+                if segment_id in prepared:
+                    raise WorkerError("INVALID_INPUT", f"Duplicate reference for segment {segment_id}.")
+                text = ref.get("transcript")
+                if not isinstance(text, str) or not text.strip():
+                    raise WorkerError("INVALID_INPUT", f"Reference transcript is missing for segment {segment_id}.")
+                prepared[segment_id] = {"path": self.path(ref.get("audio")), "text": text}
         result = tts.run(context, self.wire.progress, prepared_references=prepared)
         clips = json.loads(result.output_files["speech_clips"].read_text())["clips"]
         segments = []

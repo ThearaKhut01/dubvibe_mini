@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import shutil
 import sys
 from collections import deque
 from collections.abc import Callable
@@ -14,9 +16,13 @@ from .errors import ApiError
 from .segments import LANGUAGES, Segment, Transcript, read_transcript, read_translation
 from .steps import Completed, StageContext
 from ..paths import data_directory
-from ..config import env
+from ..config import env, ffmpeg_binary
 
 MAX_REFERENCE_DURATION_MS = 10_000
+
+# Remote Microsoft Edge TTS preset voices always end in "Neural" (en-US-AriaNeural).
+EDGE_MODEL = "Edge TTS"
+EDGE_VOICE_PATTERN = re.compile(r"^[a-z]{2,3}-[a-z]{2,8}-[a-z0-9]+neural$", re.IGNORECASE)
 
 
 def model_directory() -> Path:
@@ -127,12 +133,17 @@ def prepare_reference_audio(context: StageContext, transcript: Transcript, progr
 
 
 def run(context: StageContext, progress: Callable[[float | None, str], None], *,
-        prepared_references: dict) -> Completed:
+        prepared_references: dict | None = None) -> Completed:
     from .media import _run_media
 
     context.check_cancel()
     selection = context.config.tts
-    if selection is None or selection.adapter != "voxcpm" or selection.model != "VoxCPM2" or selection.device == "remote":
+    if selection is None:
+        raise ApiError(422, "INVALID_CONFIG", "Dubbing requires a configured TTS provider.",
+                       field="tts", stage="tts")
+    if selection.adapter == "edge":
+        return _run_edge(context, progress, _run_media)
+    if selection.adapter != "voxcpm" or selection.model != "VoxCPM2" or selection.device == "remote":
         raise ApiError(422, "INVALID_CONFIG", "TTS requires the local VoxCPM2 model and a CPU/CUDA/ROCm/MPS device.",
                        field="tts", stage="tts")
     if selection.voice.mode != "source_clone":
@@ -141,19 +152,8 @@ def run(context: StageContext, progress: Callable[[float | None, str], None], *,
     if not available_models():
         raise ApiError(503, "MODEL_NOT_READY", "The local VoxCPM2 model assets are missing or incomplete.",
                        field="tts.model", stage="tts")
-    for name in ("transcript", "translation"):
-        path = context.input_files.get(name)
-        if path is None or not path.is_file() or path.stat().st_size == 0:
-            raise ApiError(500, "INPUT_MISSING", f"The {name} input is missing or empty.", stage="tts")
-    transcript = read_transcript(context.input_files["transcript"], stage="tts")
-    translation = read_translation(context.input_files["translation"], transcript, stage="tts")
-    if transcript.detected_language not in LANGUAGES or context.config.target_language not in LANGUAGES:
-        raise ApiError(422, "UNSUPPORTED_LANGUAGE", "VoxCPM2 supports English, Chinese and Japanese in this pipeline.",
-                       stage="tts", action="adjust_settings")
-    if translation.target_language != context.config.target_language:
-        raise ApiError(502, "INVALID_PROVIDER_RESULT", "The translation target language differs from the Task.", stage="tts")
-    texts = translation.match(transcript)
-    prepared = prepared_references
+    transcript, texts = _read_translation(context, "VoxCPM2")
+    prepared = prepared_references or {}
     if set(prepared) != {segment.id for segment in transcript.segments}:
         raise _reference_error("Prepared source references must match transcript utterance IDs exactly.")
     output_dir = context.work_dir / "tts"
@@ -173,16 +173,78 @@ def run(context: StageContext, progress: Callable[[float | None, str], None], *,
         check_cancel=context.check_cancel,
     )
     if result.returncode != 0:
-        try:
-            error = json.loads(result.stderr.strip().splitlines()[-1])
-        except (ValueError, IndexError):
-            error = {}
-        if (not isinstance(error, dict) or error.get("code") not in {"MODEL_NOT_READY", "INPUT_MISSING", "INVALID_PROVIDER_RESULT"}
-                or not isinstance(error.get("message"), str)):
-            error = {"code": "WORKER_EXITED", "message": f"VoxCPM2 process exited with code {result.returncode}."}
-        status = 503 if error["code"] == "MODEL_NOT_READY" else 502
-        raise ApiError(status, error["code"], error["message"], stage="tts",
-                       action="adjust_settings" if status == 503 else "retry") from RuntimeError(result.stderr)
+        _child_error(result.returncode, result.stderr, f"VoxCPM2 process exited with code {result.returncode}.")
+    return _publish_clips(context, progress, clips, transcript)
+
+
+def _read_translation(context: StageContext, provider: str) -> tuple[Transcript, dict]:
+    for name in ("transcript", "translation"):
+        path = context.input_files.get(name)
+        if path is None or not path.is_file() or path.stat().st_size == 0:
+            raise ApiError(500, "INPUT_MISSING", f"The {name} input is missing or empty.", stage="tts")
+    transcript = read_transcript(context.input_files["transcript"], stage="tts")
+    translation = read_translation(context.input_files["translation"], transcript, stage="tts")
+    if transcript.detected_language not in LANGUAGES or context.config.target_language not in LANGUAGES:
+        raise ApiError(422, "UNSUPPORTED_LANGUAGE",
+                       f"{provider} supports English, Chinese and Japanese in this pipeline.",
+                       stage="tts", action="adjust_settings")
+    if translation.target_language != context.config.target_language:
+        raise ApiError(502, "INVALID_PROVIDER_RESULT", "The translation target language differs from the Task.", stage="tts")
+    return transcript, translation.match(transcript)
+
+
+def _run_edge(context: StageContext, progress: Callable[[float | None, str], None], run_media) -> Completed:
+    selection = context.config.tts
+    if selection.model != EDGE_MODEL or selection.device != "remote":
+        raise ApiError(422, "INVALID_CONFIG", "Edge TTS runs on the remote device; select the Edge TTS model.",
+                       field="tts", stage="tts")
+    voice = selection.voice
+    if voice.mode != "preset":
+        raise ApiError(422, "INVALID_CONFIG", "Edge TTS uses a preset Microsoft voice.",
+                       field="tts.voice.mode", stage="tts")
+    if not EDGE_VOICE_PATTERN.fullmatch(voice.id or ""):
+        raise ApiError(422, "INVALID_CONFIG", "Select an Edge TTS voice such as en-US-AriaNeural.",
+                       field="tts.voice.id", stage="tts")
+    import importlib.util
+    if importlib.util.find_spec("edge_tts") is None:
+        raise ApiError(503, "MODEL_NOT_READY", "Install edge-tts in the backend environment.",
+                       field="tts.model", stage="tts")
+    if shutil.which(ffmpeg_binary()) is None:
+        raise ApiError(503, "RUNTIME_UNAVAILABLE", "ffmpeg is unavailable.", stage="tts")
+    transcript, texts = _read_translation(context, "Edge TTS")
+    output_dir = context.work_dir / "tts"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    clips = [{"segment_id": segment.id, "text": texts[segment.id], "voice": voice.id,
+              "output_path": str((output_dir / f"{index:06d}.wav").resolve())}
+             for index, segment in enumerate(transcript.segments, start=1)]
+    request_path = output_dir / "request.json"
+    request_path.write_text(json.dumps({"clips": clips}, ensure_ascii=False, indent=2), encoding="utf-8")
+    progress(None, "Generating translated speech with Edge TTS (subtitle text is sent to Microsoft)")
+    result = run_media(
+        [sys.executable, str(Path(__file__).with_name("edge_process.py")),
+         "--request-path", str(request_path.resolve()), "--ffmpeg", ffmpeg_binary()],
+        check_cancel=context.check_cancel,
+    )
+    if result.returncode != 0:
+        _child_error(result.returncode, result.stderr, f"Edge TTS process exited with code {result.returncode}.")
+    return _publish_clips(context, progress, clips, transcript)
+
+
+def _child_error(returncode: int, stderr: str, fallback_message: str) -> None:
+    try:
+        error = json.loads(stderr.strip().splitlines()[-1])
+    except (ValueError, IndexError):
+        error = {}
+    if (not isinstance(error, dict) or error.get("code") not in {"MODEL_NOT_READY", "INPUT_MISSING", "INVALID_PROVIDER_RESULT"}
+            or not isinstance(error.get("message"), str)):
+        error = {"code": "WORKER_EXITED", "message": fallback_message}
+    status = 503 if error["code"] == "MODEL_NOT_READY" else 502
+    raise ApiError(status, error["code"], error["message"], stage="tts",
+                   action="adjust_settings" if status == 503 else "retry") from RuntimeError(stderr)
+
+
+def _publish_clips(context: StageContext, progress: Callable[[float | None, str], None],
+                   clips: list, transcript: Transcript) -> Completed:
     measured = []
     for clip in clips:
         context.check_cancel()

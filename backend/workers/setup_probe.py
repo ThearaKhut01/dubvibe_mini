@@ -9,6 +9,7 @@ DISTRIBUTIONS = {
     "dotenv": "python-dotenv", "pydantic": "pydantic", "keyring": "keyring", "openai": "openai",
     "torch": "torch", "torchaudio": "torchaudio", "torchcodec": "torchcodec", "whisper": "openai-whisper", "nltk": "nltk",
     "voxcpm": "voxcpm", "transformers": "transformers", "soundfile": "soundfile", "librosa": "librosa",
+    "edge_tts": "edge-tts",
     "numpy": "numpy", "julius": "julius", "dora": "dora-search", "omegaconf": "omegaconf",
     "einops": "einops", "openunmix": "openunmix", "tqdm": "tqdm", "yt_dlp": "yt-dlp", "packaging": "packaging",
 }

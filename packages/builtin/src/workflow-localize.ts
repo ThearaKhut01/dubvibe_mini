@@ -68,7 +68,7 @@ export async function apply(ctx: Context, plugin: { integrity: string; version?:
           if (!model.voice_modes.includes(selection.voice.mode)) fail('Selected voice mode is unsupported.', 'tts.voice')
           if (selection.voice.mode === 'preset' && !model.voices?.some((voice: any) => voice.id === selection.voice.id && voice.languages.includes(config.target_language))) fail('Selected preset voice is unavailable.', 'tts.voice.id')
         }
-        if (provider.execution === 'remote' && !connections.some((connection: any) => connection.adapter === selection.adapter && connection.base_url && connection.has_api_key)) fail('Provider connection is not configured.', `${kind}.adapter`)
+        if (provider.execution === 'remote' && provider.requires_api_key !== false && !connections.some((connection: any) => connection.adapter === selection.adapter && connection.base_url && connection.has_api_key)) fail('Provider connection is not configured.', `${kind}.adapter`)
       }
       return errors
     },

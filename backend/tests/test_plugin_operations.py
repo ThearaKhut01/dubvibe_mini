@@ -89,6 +89,27 @@ def test_reference_worker_and_tts_bridge_preserve_each_utterance_id(tmp_path, mo
     assert [item["id"] for item in synthesized["outputs"]["speechAudio"]["segments"]] == ["one", "two"]
 
 
+def test_tts_worker_accepts_preset_voice_without_references(tmp_path, monkeypatch):
+    transcript = {"detected_language": "en", "segments": [{"id": "one", "start_ms": 0, "end_ms": 1000, "text": "Text"}]}
+
+    def synthesize(context, progress, *, prepared_references):
+        assert prepared_references == {}
+        assert context.config.tts.voice.mode == "preset"
+        assert context.config.tts.voice.id == "zh-CN-XiaoxiaoNeural"
+        sf.write(context.work_dir / "000001.wav", np.zeros(4800), 24000, subtype="PCM_16")
+        output = context.work_dir / "speech_clips.json"
+        output.write_text(json.dumps({"clips": [{"segment_id": "one", "path": "000001.wav"}]}))
+        return SimpleNamespace(output_files={"speech_clips": output})
+
+    monkeypatch.setattr(tts, "run", synthesize)
+    synthesized = invoke(tmp_path, "speech.synthesize/v1", {
+        "transcript": transcript, "translation": {},
+    }, {"tts": {"adapter": "edge", "model": "Edge TTS", "device": "remote",
+                "voice": {"mode": "preset", "id": "zh-CN-XiaoxiaoNeural"}},
+        "voice": {"mode": "preset", "id": "zh-CN-XiaoxiaoNeural"}}).execute()
+    assert [item["id"] for item in synthesized["outputs"]["speechAudio"]["segments"]] == ["one"]
+
+
 @pytest.mark.parametrize("segment_id", [None, "", "  ", 42, [], {}])
 def test_tts_worker_rejects_missing_or_invalid_segment_reference_id(tmp_path, monkeypatch, segment_id):
     monkeypatch.setattr(tts, "run", lambda *_args, **_kwargs: pytest.fail("Invalid reference reached TTS"))

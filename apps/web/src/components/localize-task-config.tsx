@@ -146,6 +146,7 @@ export function TaskOptions({ value, runtime, onChange }: {
 const ADAPTER_NAMES: Record<string, [string, string, string]> = {
   whisper: ["Whisper", "Whisper", "Whisper"],
   openai: ["OpenAI-compatible", "OpenAI 兼容", "OpenAI 互換"],
+  edge: ["Edge TTS", "Edge TTS", "Edge TTS"],
   voxcpm: ["VoxCPM", "VoxCPM", "VoxCPM"],
   demucs: ["Demucs", "Demucs", "Demucs"],
   qwen_forced_aligner: ["Qwen", "Qwen", "Qwen"],
