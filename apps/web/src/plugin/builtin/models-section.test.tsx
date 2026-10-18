@@ -7,8 +7,8 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); window.localStorage.clear() 
 
 const catalog = {
   items: [
-    { id: 'whisper', name: 'Whisper', variant: 'tiny', purpose: 'Speech recognition', optional: false, installed: true, busy: false, status: 'ready', received: 75572083, total: 75572083, speed: 0, files: [{ path: 'tiny.pt', size: 75572083, present: true }] },
-    { id: 'demucs', name: 'Demucs', variant: 'htdemucs', purpose: 'Vocal separation', optional: false, installed: false, busy: false, status: 'pending', received: 0, total: 84141911, speed: 0, files: [{ path: 'd.th', size: 84141911, present: false }] },
+    { id: 'whisper', name: 'Whisper', variant: 'tiny', purpose: 'Speech recognition', category: 'asr', optional: false, installed: true, busy: false, status: 'ready', received: 75572083, total: 75572083, speed: 0, files: [{ path: 'tiny.pt', size: 75572083, present: true }] },
+    { id: 'demucs', name: 'Demucs', variant: 'htdemucs', purpose: 'Vocal separation', category: 'separation', optional: false, installed: false, busy: false, status: 'pending', received: 0, total: 84141911, speed: 0, files: [{ path: 'd.th', size: 84141911, present: false }] },
   ],
 }
 
@@ -24,6 +24,8 @@ it('shows Remove only for installed models and removes through the guarded route
   vi.stubGlobal('fetch', fetchMock)
 
   render(<LanguageProvider><ModelsSection /></LanguageProvider>)
+  // Groups start collapsed; open the category dropdown to reach the model row.
+  fireEvent.click(await screen.findByRole('button', { name: /Speech recognition/ }))
   await screen.findByText('Whisper')
   expect(screen.getAllByRole('button', { name: /Remove/ })).toHaveLength(1)
 
@@ -52,6 +54,7 @@ it('downloads a missing model through the guarded POST route and pauses a runnin
   vi.stubGlobal('fetch', fetching)
 
   render(<LanguageProvider><ModelsSection /></LanguageProvider>)
+  fireEvent.click(await screen.findByRole('button', { name: /Vocal separation/ }))
   await screen.findByText('Demucs')
 
   fireEvent.click(screen.getByRole('button', { name: /Download/ }))

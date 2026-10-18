@@ -14,7 +14,8 @@
         "sha256": "65147644a518d12f04e32d6f3b26facc3f8dd46e5390956a9424a650c0ce22b9",
         "url": "https://openaipublic.azureedge.net/main/whisper/models/65147644a518d12f04e32d6f3b26facc3f8dd46e5390956a9424a650c0ce22b9/tiny.pt"
       }
-    ]
+    ],
+    "category": "asr"
   },
   {
     "id": "whisper-tiny.en",
@@ -31,7 +32,8 @@
         "sha256": "d3dd57d32accea0b295c96e26691aa14d8822fac7d9d27d5dc00b4ca2826dd03",
         "url": "https://openaipublic.azureedge.net/main/whisper/models/d3dd57d32accea0b295c96e26691aa14d8822fac7d9d27d5dc00b4ca2826dd03/tiny.en.pt"
       }
-    ]
+    ],
+    "category": "asr"
   },
   {
     "id": "whisper-base",
@@ -48,7 +50,8 @@
         "sha256": "ed3a0b6b1c0edf879ad9b11b1af5a0e6ab5db9205f891f668f8b0e6c6326e34e",
         "url": "https://openaipublic.azureedge.net/main/whisper/models/ed3a0b6b1c0edf879ad9b11b1af5a0e6ab5db9205f891f668f8b0e6c6326e34e/base.pt"
       }
-    ]
+    ],
+    "category": "asr"
   },
   {
     "id": "whisper-base.en",
@@ -65,7 +68,8 @@
         "sha256": "25a8566e1d0c1e2231d1c762132cd20e0f96a85d16145c3a00adf5d1ac670ead",
         "url": "https://openaipublic.azureedge.net/main/whisper/models/25a8566e1d0c1e2231d1c762132cd20e0f96a85d16145c3a00adf5d1ac670ead/base.en.pt"
       }
-    ]
+    ],
+    "category": "asr"
   },
   {
     "id": "whisper-small",
@@ -82,7 +86,8 @@
         "sha256": "9ecf779972d90ba49c06d968637d720dd632c55bbf19d441fb42bf17a411e794",
         "url": "https://openaipublic.azureedge.net/main/whisper/models/9ecf779972d90ba49c06d968637d720dd632c55bbf19d441fb42bf17a411e794/small.pt"
       }
-    ]
+    ],
+    "category": "asr"
   },
   {
     "id": "whisper-small.en",
@@ -99,7 +104,8 @@
         "sha256": "f953ad0fd29cacd07d5a9eda5624af0f6bcf2258be67c92b79389873d91e0872",
         "url": "https://openaipublic.azureedge.net/main/whisper/models/f953ad0fd29cacd07d5a9eda5624af0f6bcf2258be67c92b79389873d91e0872/small.en.pt"
       }
-    ]
+    ],
+    "category": "asr"
   },
   {
     "id": "whisper-medium",
@@ -116,7 +122,8 @@
         "sha256": "345ae4da62f9b3d59415adc60127b97c714f32e89e936602e85993674d08dcb1",
         "url": "https://openaipublic.azureedge.net/main/whisper/models/345ae4da62f9b3d59415adc60127b97c714f32e89e936602e85993674d08dcb1/medium.pt"
       }
-    ]
+    ],
+    "category": "asr"
   },
   {
     "id": "whisper-medium.en",
@@ -133,7 +140,8 @@
         "sha256": "d7440d1dc186f76616474e0ff0b3b6b879abc9d1a4926b7adfa41db2d497ab4f",
         "url": "https://openaipublic.azureedge.net/main/whisper/models/d7440d1dc186f76616474e0ff0b3b6b879abc9d1a4926b7adfa41db2d497ab4f/medium.en.pt"
       }
-    ]
+    ],
+    "category": "asr"
   },
   {
     "id": "whisper-large-v1",
@@ -150,7 +158,8 @@
         "sha256": "e4b87e7e0bf463eb8e6956e646f1e277e901512310def2c24bf0e11bd3c28e9a",
         "url": "https://openaipublic.azureedge.net/main/whisper/models/e4b87e7e0bf463eb8e6956e646f1e277e901512310def2c24bf0e11bd3c28e9a/large-v1.pt"
       }
-    ]
+    ],
+    "category": "asr"
   },
   {
     "id": "whisper-large-v2",
@@ -167,7 +176,8 @@
         "sha256": "81f7c96c852ee8fc832187b0132e569d6c3065a3252ed18e56effd0b6a73e524",
         "url": "https://openaipublic.azureedge.net/main/whisper/models/81f7c96c852ee8fc832187b0132e569d6c3065a3252ed18e56effd0b6a73e524/large-v2.pt"
       }
-    ]
+    ],
+    "category": "asr"
   },
   {
     "id": "whisper-large-v3",
@@ -184,7 +194,8 @@
         "sha256": "e5b1a55b89c1367dacf97e3e19bfd829a01529dbfdeefa8caeb59b3f1b81dadb",
         "url": "https://openaipublic.azureedge.net/main/whisper/models/e5b1a55b89c1367dacf97e3e19bfd829a01529dbfdeefa8caeb59b3f1b81dadb/large-v3.pt"
       }
-    ]
+    ],
+    "category": "asr"
   },
   {
     "id": "whisper-large-v3-turbo",
@@ -201,7 +212,8 @@
         "sha256": "aff26ae408abcba5fbf8813c21e62b0941638c5f6eebfb145be0c9839262a19a",
         "url": "https://openaipublic.azureedge.net/main/whisper/models/aff26ae408abcba5fbf8813c21e62b0941638c5f6eebfb145be0c9839262a19a/large-v3-turbo.pt"
       }
-    ]
+    ],
+    "category": "asr"
   },
   {
     "id": "voxcpm",
@@ -254,7 +266,8 @@
         "sha256": "e78a3ebb48a0b9437efd1823b6b726c823da89e49dd8bcc90c02419d9baa772b",
         "url": "https://modelscope.cn/api/v1/models/OpenBMB/VoxCPM2/repo?Revision=519da200db2bc31a0395635fc7042653b9c4c862&FilePath=tokenizer_config.json"
       }
-    ]
+    ],
+    "category": "tts"
   },
   {
     "id": "nllb",
@@ -307,7 +320,8 @@
         "sha256": "d1aa8c3697d3e35674f97b5b7e9c99d22b010f528e80140257d97316be90d044",
         "url": "https://modelscope.cn/api/v1/models/facebook/nllb-200-distilled-600M/repo?Revision=64c0273bad14fae9af284fd99ddd64869e38b7fd&FilePath=tokenizer_config.json"
       }
-    ]
+    ],
+    "category": "translation"
   },
   {
     "id": "hy_mt",
@@ -360,7 +374,8 @@
         "sha256": "53bd8581b601a8ee9caefeb988207de50b3fc0b733295bdf5ad68dec4cc0b07c",
         "url": "https://modelscope.cn/api/v1/models/Tencent-Hunyuan/HY-MT1.5-1.8B/repo?Revision=e14d07134e42ffb3e9a4cff53f92142ec16b3d2d&FilePath=tokenizer_config.json"
       }
-    ]
+    ],
+    "category": "translation"
   },
   {
     "id": "demucs",
@@ -377,7 +392,8 @@
         "sha256": "8726e21a",
         "url": "https://dl.fbaipublicfiles.com/demucs/hybrid_transformer/955717e8-8726e21a.th"
       }
-    ]
+    ],
+    "category": "separation"
   },
   {
     "id": "qwen",
@@ -424,6 +440,7 @@
         "sha256": "945e980986de2ca7768f3326bfdbb4fbea3406f972b8ae0be233089f2b253c11",
         "url": "https://modelscope.cn/api/v1/models/Qwen/Qwen3-ForcedAligner-0.6B-hf/repo?Revision=053506a54ad1c9deea6105050330d7c500b9f098&FilePath=tokenizer_config.json"
       }
-    ]
+    ],
+    "category": "alignment"
   }
 ]

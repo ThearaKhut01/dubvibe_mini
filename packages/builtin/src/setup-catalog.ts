@@ -20,7 +20,7 @@ export function catalogFor({ folderFor, busy, progress }: CatalogOptions) {
     const folder = folderFor(definition.id)
     const files = definition.files.map(file => ({ path: file.path, size: file.size, present: existsSync(join(folder, file.path)) }))
     const tracked = progress?.(definition.id)
-    return { id: definition.id, name: definition.name, variant: definition.variant, purpose: definition.purpose,
+    return { id: definition.id, name: definition.name, variant: definition.variant, purpose: definition.purpose, category: definition.category,
       optional: definition.optional ?? false, installed: files.every(file => file.present), busy: busy?.(definition.id) ?? false, files,
       status: tracked?.status, received: tracked?.received ?? 0, total: files.reduce((sum, file) => sum + file.size, 0), speed: tracked?.speed ?? 0, error: tracked?.error }
   })
