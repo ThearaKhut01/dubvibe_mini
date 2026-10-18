@@ -9,6 +9,8 @@ const labels: Record<string, string> = { download: 'Download video', prepare: 'P
 const selection = (extra: JsonObject = {}) => ({ type: 'object', required: ['adapter', 'model', 'device'], additionalProperties: false,
   properties: { adapter: { type: 'string', minLength: 1 }, model: { type: 'string', minLength: 1 }, device: { type: 'string', minLength: 1 }, ...extra } })
 const nullable = (schema: JsonObject) => ({ anyOf: [schema, { type: 'null' }] })
+// The optional translation fallback chain mirrors the backend TaskConfig
+// contract; defaults saved through the API round-trip both keys.
 export const localizeSchema: JsonObject = {
   type: 'object', additionalProperties: false,
   required: ['source_language', 'target_language', 'output_mode', 'keep_background', 'asr', 'translation', 'tts', 'separation'],
@@ -17,6 +19,8 @@ export const localizeSchema: JsonObject = {
     source_language: { type: 'string', minLength: 2 }, target_language: { type: 'string', minLength: 2 },
     output_mode: { enum: ['subtitles', 'dubbing', 'both'] }, keep_background: { type: 'boolean' },
     asr: selection({ initial_prompt: { type: ['string', 'null'], maxLength: 500 } }), translation: selection(),
+    translation_providers: nullable({ type: 'array', minItems: 1, items: { type: 'string', minLength: 1 } }),
+    translation_models: nullable({ type: 'object', additionalProperties: { type: 'string', minLength: 1 } }),
     tts: nullable(selection({ voice: { oneOf: [
       { type: 'object', additionalProperties: false, required: ['mode'], properties: { mode: { const: 'source_clone' } } },
       { type: 'object', additionalProperties: false, required: ['mode', 'id'], properties: { mode: { const: 'preset' }, id: { type: 'string', minLength: 1 } } },

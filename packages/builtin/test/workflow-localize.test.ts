@@ -12,7 +12,7 @@ test('localize requires available media tools before accepting any output mode',
     await context.plugin(Catalog)
     await context.plugin({ inject: ['catalog'], apply(scope) {
       for (const capability of ['download', 'media', 'asr', 'translation', 'tts', 'separation']) {
-        const id = ['download', 'media'].includes(capability) ? `dubvibe_mini.${capability}` : capability
+        const id = ['download', 'media'].includes(capability) ? `youdub.${capability}` : capability
         scope.effect(() => scope.catalog.registerProvider({
         id,
         describe: () => ({ id, label: id, capability, adapter: id, pluginId: id, pluginVersion: '1', integrity: 'test', operations: [], available: capability === 'media' ? available : true, unavailableReason: 'ffmpeg unavailable', models: [{ id: 'test', devices: ['cpu'], source_languages: ['en'], target_languages: ['zh'], voice_modes: ['source_clone'] }] }),
@@ -46,4 +46,20 @@ test('localize requires available media tools before accepting any output mode',
     assert.deepEqual(uploaded.steps[0].input.video, { from: 'task', name: 'video' })
     assert.deepEqual(await workflow.validate({ video: { id: "input-video", schemaId: "video/mp4/v1" } }, config, ctx.catalog), [])
   }
+})
+
+test('localize config accepts the optional translation fallback chain from saved defaults', async t => {
+  const { default: Ajv } = await import('ajv/dist/2020.js')
+  const validator = new (Ajv as any)({ allErrors: true, strict: false })
+  const assertValid = (value: unknown) => validator.validate(Localize.localizeSchema, value)
+  const select = (adapter: string) => ({ adapter, model: 'test', device: 'cpu' })
+  const base = { source_language: 'auto', target_language: 'km', output_mode: 'dubbing', keep_background: true,
+    asr: { ...select('whisper'), initial_prompt: null }, translation: select('nllb'), tts: null, separation: null, subtitle_alignment: null }
+  // Defaults written by the API carry both fallback keys, usually as null.
+  assert.equal(assertValid({ ...base, translation_providers: null, translation_models: null }), true)
+  assert.equal(assertValid({ ...base, subtitle_alignment: null,
+    tts: { ...select('edge'), voice: { mode: 'preset', id: 'km-KH-SreymomNeural' } },
+    translation_providers: ['nllb', 'hy_mt'], translation_models: { nllb: 'NLLB-200-distilled-600M' } }), true)
+  assert.equal(assertValid({ ...base, stranger: 1 }), false)
+  assert.ok(validator.errors!.every(error => error.message!.includes('additional properties')))
 })
