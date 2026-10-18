@@ -16,7 +16,7 @@ transformers>=5.17,<6
 soundfile
 librosa
 numpy
-edge-tts>=7,<8
+edge-tts>=7.3,<8
 pytest
 httpx[socks]
 yt-dlp[default]==2026.8.19
