@@ -46,7 +46,9 @@ export default class Settings extends Service implements SettingsService {
     runtime.capabilities = providers.map(provider => ({
       adapter: provider.adapter ?? provider.id, capability: provider.capability, execution: provider.execution,
       available: provider.available ?? false, unavailable_reason: provider.unavailableReason ?? null,
-      requires_api_key: provider.execution === 'remote', models: provider.models ?? [],
+      // Probed providers carry the authoritative key requirement (Edge TTS is
+      // remote but keyless); others fall back to "remote ⇒ needs a key".
+      requires_api_key: provider.requires_api_key ?? provider.execution === 'remote', models: provider.models ?? [],
       data_sent: provider.dataSent ?? [], remote_operations: provider.remoteOperations ?? null,
     }))
     runtime.status = runtime.capabilities.filter((item: any) => item.capability !== 'subtitle_alignment').every((item: any) => item.available) ? 'ready' : 'degraded'

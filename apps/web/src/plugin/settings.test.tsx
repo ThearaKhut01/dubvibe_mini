@@ -39,6 +39,27 @@ it('freezes connection inputs during saving and refreshes provider readiness aft
   expect(screen.getByRole('button', { name: 'Save connection' })).toBeInTheDocument()
 })
 
+it('hides the connection form for keyless remote providers like Edge TTS', async () => {
+  const request = vi.fn(async (path: string) => {
+    if (path === '/api/v2/settings') return { connections: [{ adapter: 'openai', base_url: 'https://example.test/v1', has_api_key: true }, { adapter: 'edge', base_url: 'https://api.msedgeservices.com/tts/cognitiveservices', has_api_key: true }] }
+    if (path === '/api/v2/catalog') return { workflows: [], providers: [
+      { id: 'edge', adapter: 'edge', label: 'Edge TTS', operations: [], available: true, requires_api_key: false, models: [{ id: 'km-KH-SreymomNeural', devices: ['remote'] }] },
+      { id: 'openai', adapter: 'openai', label: 'OpenAI', operations: [], available: true, requires_api_key: true, models: [{ id: 'gpt', devices: ['remote'] }] },
+    ] }
+    return { items: [] }
+  })
+  let Page!: ComponentType<RouteProps>
+  const context = { apiClient: { request }, slots: {
+    register: (slot: string, entry: SlotMap['shell.routes']) => { if (slot === 'shell.routes') Page = entry.component; return () => {} }, subscribe: () => () => {}, getSnapshot: () => 0, list: () => [],
+  }, effect: (effect: () => unknown) => effect() } as unknown as Context
+  apply(context)
+  render(<PluginContextProvider context={context}><ThemeProvider><LanguageProvider><Page params={{}} /></LanguageProvider></ThemeProvider></PluginContextProvider>)
+  await screen.findByText('openai')
+  expect(screen.getByText('openai')).toBeInTheDocument()
+  // edge is keyless: no card even though a stale saved connection exists
+  expect(screen.queryByText('edge')).not.toBeInTheDocument()
+})
+
 it('probes runtime before refreshing its catalog, serializes clicks and surfaces probe failures without retrying', async () => {
   let finish!: (value: unknown) => void
   let fail!: (error: Error) => void
