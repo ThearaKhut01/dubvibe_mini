@@ -11,7 +11,7 @@ import { cn } from "@/lib/utils"
 import type { Capability, ModelCapability, ModelSelection, Runtime, TaskConfig, TtsSelection } from "@/plugin/builtin/localize-contracts"
 import { useText, type Text } from "@/lib/i18n"
 
-const OUTPUT_LABELS: Record<TaskConfig["output_mode"], [string, string, string]> = {
+const OUTPUT_LABELS: Record<TaskConfig["output_mode"], [string, string, string?]> = {
   subtitles: ["Subtitles · original audio", "Subtitles · original audio"],
   dubbing: ["Dubbing", "Dubbing"],
   both: ["Dubbing and subtitles", "Dubbing and subtitles"],
@@ -143,7 +143,7 @@ export function TaskOptions({ value, runtime, onChange }: {
   ))}</div>
 }
 
-const ADAPTER_NAMES: Record<string, [string, string, string]> = {
+const ADAPTER_NAMES: Record<string, [string, string, string?]> = {
   whisper: ["Whisper", "Whisper", "Whisper"],
   openai: ["OpenAI-compatible", "OpenAI 兼容", "OpenAI 互換"],
   nllb: ["NLLB-200", "NLLB-200", "NLLB-200"],

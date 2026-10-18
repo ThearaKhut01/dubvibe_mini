@@ -3,7 +3,7 @@ import { cn } from '@/lib/utils'
 import { text, type TaskStatus, type TaskView } from '../sdk'
 
 export const ACTIVE_STATUSES = new Set<TaskStatus>(['queued', 'running', 'waiting', 'cancelling'])
-export const STATUS_LABELS: Record<string, [string, string, string]> = {
+export const STATUS_LABELS: Record<string, [string, string, string?]> = {
   queued: ['Queued', 'Queued'], running: ['Running', 'Running'],
   waiting: ['Waiting', 'Waiting'], cancelling: ['Cancelling', 'Cancelling'],
   cancelled: ['Cancelled', 'Cancelled'], succeeded: ['Completed', 'Completed'], failed: ['Failed', 'Failed'],
