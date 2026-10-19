@@ -1,6 +1,6 @@
 import { useId } from 'react'
 import { text, useSlot, type EditorProps, type JsonObject, type JsonSchema } from '../sdk'
-import { useI18n } from '@/lib/i18n'
+import { useI18n, useText } from '@/lib/i18n'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 
@@ -35,11 +35,12 @@ function Fields({ schema, value, onChange, readOnly, prefix = '' }: EditorProps 
   })}</div>
 }
 export function ConfigEditor({ ownerId, ...props }: EditorProps & { ownerId: string }) {
+  const tx = useText()
   const editors = useSlot('config.editors')
   const Custom = editors.find((entry) => entry.id === ownerId)?.component
   if (Custom) return <Custom {...props} />
   const unsupported = schemaProblems(props.schema)
-  if (unsupported.length) return <p role="alert" className="text-sm text-status-danger-fg">配置需要插件编辑器：{unsupported.join(', ')}</p>
+  if (unsupported.length) return <p role="alert" className="text-sm text-status-danger-fg">{tx('This schema needs a plugin editor: ', '该配置需要插件编辑器：', 'គ្រោងការណ៍នេះត្រូវការកម្មវិធីនិពន្ធផ្នែកបន្ថែម៖ ')}{unsupported.join(', ')}</p>
   return <Fields {...props} />
 }
 export function useEditorSupported(ownerId: string, schema: JsonSchema) {

@@ -145,7 +145,7 @@ export function TaskOptions({ value, runtime, onChange }: {
 
 const ADAPTER_NAMES: Record<string, [string, string, string?]> = {
   whisper: ["Whisper", "Whisper", "Whisper"],
-  openai: ["OpenAI-compatible", "OpenAI 兼容", "OpenAI 互換"],
+  openai: ["OpenAI-compatible", "OpenAI 兼容", "OpenAI ត្រូវគ្នា"],
   nllb: ["NLLB-200", "NLLB-200", "NLLB-200"],
   hy_mt: ["Tencent HY-MT", "腾讯 HY-MT", "Tencent HY-MT"],
   edge: ["Edge TTS", "Edge TTS", "Edge TTS"],
@@ -287,15 +287,15 @@ export function TaskConfigForm({ value, runtime, onChange }: {
         </Field>
       </ConfigRow>
       <ConfigRow icon={ArrowRightLeft} tint="violet" title={text("Languages", "语言", "\u1797\u17B6\u179F\u17B6")}
-        description={text("The spoken language and the one to translate into.", "视频原本的语言，以及要翻译成的语言。")}>
+        description={text("The spoken language and the one to translate into.", "视频原本的语言，以及要翻译成的语言。", "ភាសាដើមនៃវីដេអូ និងភាសាដែលត្រូវបកប្រែទៅ។")}>
         <LanguageField id="source-language" caption={text("Source language", "原文语言", "\u1797\u17B6\u179F\u17B6\u1794\u17D2\u179A\u1797\u1796")} value={value.source_language} options={sources} onChange={(source_language) => change({ source_language })} />
         <LanguageField id="target-language" caption={text("Target language", "目标语言", "\u1797\u17B6\u179F\u17B6\u1782\u17C4\u179B\u178A\u17C5")} value={value.target_language} options={targets} onChange={(target_language) => change({ target_language })} />
       </ConfigRow>
 
     <ConfigRow icon={Mic} tint="blue" title={text("Speech recognition", "语音识别", "\u1780\u17B6\u179A\u179F\u1798\u17D2\u1782\u17B6\u179B\u17CB\u179F\u17C6\u17A1\u17C1\u1784")}
-      description={text("Turns speech into text. Name hints help with people and brands.", "把语音转成文字，专名提示能让人名、品牌名更准确。")}>
+      description={text("Turns speech into text. Name hints help with people and brands.", "把语音转成文字，专名提示能让人名、品牌名更准确。", "បំលែងសំឡេងទៅជាអត្ថបទ។ ការបំភ័័តឈ្មោះ ជួយឱ្យឈ្មោះមនុស្ស និងម៉ាក់ ភ្ជាប់បានត្រឹមត្រូវ។")}>
       <ModelField kind="asr" id="model-asr" caption={text("Model", "模型", "ម៉ូដែល")} srPrefix={text("Speech recognition ", "语音识别", "\u1780\u17B6\u179A\u179F\u1798\u17D2\u1782\u17B6\u179B\u17CB\u179F\u17C6\u17A1\u17C1\u1784 ")} value={value.asr} runtime={runtime} onChange={(asr) => change({ asr: { ...value.asr, ...asr } })} />
-      <Field id="asr-initial-prompt" caption={text("Proper-name hint (optional)", "专名提示（可选）")}>
+      <Field id="asr-initial-prompt" caption={text("Proper-name hint (optional)", "专名提示（可选）", "ការបំភ័័តឈ្មោះជាក់លាក់ (ស្រេចចិត្ត)")}>
         <div className="relative">
           <Input id="asr-initial-prompt" maxLength={500} value={value.asr.initial_prompt ?? ""} aria-describedby="asr-initial-prompt-help" className="pr-16"
             placeholder={text("e.g. dubvibe_mini, Jensen Huang", "例如：dubvibe_mini、黄仁勋", "ឧ. dubvibe_mini, Jensen Huang")}
@@ -307,12 +307,12 @@ export function TaskConfigForm({ value, runtime, onChange }: {
     </ConfigRow>
 
     <ConfigRow icon={Languages} tint="violet" title={text("Translation", "翻译", "\u1780\u17B6\u179A\u1794\u1780\u1794\u17D2\u179A\u17C2")}
-      description={text("Translates the transcript sentence by sentence.", "逐句翻译识别出的原文。")}>
+      description={text("Translates the transcript sentence by sentence.", "逐句翻译识别出的原文。", "បកប្រែអត្ថបទដើមម្តងមួយឃ្លា។")}>
       <ModelField kind="translation" id="model-translation" caption={text("Model", "模型", "ម៉ូដែល")} srPrefix={text("Translation ", "翻译", "\u1780\u17B6\u179A\u1794\u1780\u1794\u17D2\u179A\u17C2 ")} value={value.translation} runtime={runtime} onChange={(translation) => change({ translation })} />
     </ConfigRow>
 
     {value.output_mode === "both" ? <ConfigRow icon={Captions} tint="teal" title={text("Subtitles", "字幕", "\u17A2\u1780\u17D2\u179F\u179A\u179A\u1784")}
-      description={text("Qwen can align subtitles to the generated speech, keeping full-sentence dubbing.", "Qwen 可以按生成的配音对齐字幕，仍保持整句配音。")}>
+      description={text("Qwen can align subtitles to the generated speech, keeping full-sentence dubbing.", "Qwen 可以按生成的配音对齐字幕，仍保持整句配音。", "Qwen អាចតម្រឹមចំណងជើងទៅនឹងសំឡេងបញ្ចូល ដើម្បីរក្សាការបញ្ចូលសំឡេងម្តងមួយឃ្លា។")}>
       <Field id="subtitle-alignment" caption={text("Timing", "时间", "ពេលវេលា")} srPrefix={text("Subtitle ", "字幕", "ចំណងជើង ")}>
         <FieldSelect id="subtitle-alignment" value={value.subtitle_alignment ? alignmentKey : ESTIMATE_TIMING}
           display={value.subtitle_alignment
