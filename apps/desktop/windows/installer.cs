@@ -124,7 +124,7 @@ internal sealed class SetupWindow : Form
             key.SetValue("DisplayVersion", BuildVersion);
             key.SetValue("Publisher", "dubvibe_mini");
             key.SetValue("DisplayIcon", Path.Combine(Install, "dubvibe_mini.exe"));
-            key.SetValue("InstallLocation", Path.Combine(Install, "dubvibe_mini.exe"));
+            key.SetValue("InstallLocation", Install);
             key.SetValue("UninstallString", Path.Combine(Install, "uninstall.exe"));
             key.SetValue("DisplaySize", "KB" + Math.Round((Directory.Exists(Install) ? DirectorySize(new DirectoryInfo(Install)) : 0) / 1024.0));
             key.Close();
