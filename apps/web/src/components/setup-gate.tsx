@@ -6,7 +6,7 @@ import { SetupScreen, type SetupState, type SetupAction } from './setup-screen'
 async function request(init?: RequestInit): Promise<SetupState> {
   const response = await fetch('/api/setup', { ...init, cache: 'no-store', credentials: 'same-origin' })
   const body = await response.text()
-  if (!response.ok) throw new Error(`Environment setup request failed (${response.status})：${body.slice(0, 1000)}`)
+  if (!response.ok) throw new Error(`Environment setup request failed (${response.status}): ${body.slice(0, 1000)}`)
   return JSON.parse(body)
 }
 export function SetupGate({ children }: { children: ReactNode }) {

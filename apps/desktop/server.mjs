@@ -85,7 +85,7 @@ try {
     upstream.on('error', error => {
       console.error(error)
       if (outgoing.headersSent) outgoing.destroy(error)
-      else { outgoing.writeHead(502, { 'Content-Type': 'text/plain; charset=utf-8' }); outgoing.end('本地服务连接失败，请查看应用日志。') }
+      else { outgoing.writeHead(502, { 'Content-Type': 'text/plain; charset=utf-8' }); outgoing.end('Could not reach the local service. Check the app logs.') }
     })
     outgoing.on('close', () => upstream.destroy())
     incoming.pipe(upstream)

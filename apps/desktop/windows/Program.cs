@@ -59,13 +59,13 @@ internal sealed class DesktopWindow : Form
                                workArea.Top + (workArea.Height - height) / 2, width, height);
         Icon = Icon.ExtractAssociatedIcon(Application.ExecutablePath);
         browser.Dock = DockStyle.Fill;
-        status.Text = "正在启动 dubvibe_mini…";
+        status.Text = "Starting dubvibe_mini…";
         status.Dock = DockStyle.Fill;
         status.TextAlign = ContentAlignment.MiddleCenter;
         var menu = new MenuStrip();
-        menu.Items.Add("刷新", null, delegate { if (origin != null) browser.Reload(); });
-        menu.Items.Add("查看日志", null, delegate { OpenExternal(Path.Combine(data, "logs", "desktop.log")); });
-        menu.Items.Add("退出", null, delegate { Close(); });
+        menu.Items.Add("Refresh", null, delegate { if (origin != null) browser.Reload(); });
+        menu.Items.Add("Open logs", null, delegate { OpenExternal(Path.Combine(data, "logs", "desktop.log")); });
+        menu.Items.Add("Quit", null, delegate { Close(); });
         Controls.Add(browser);
         Controls.Add(status);
         Controls.Add(menu);
@@ -79,7 +79,7 @@ internal sealed class DesktopWindow : Form
             e.Cancel = true;
             if (closing) return;
             closing = true;
-            status.Text = "正在停止本地服务…";
+            status.Text = "Stopping the local service…";
             status.Visible = true;
             await StopAsync();
             closed = true;
@@ -95,7 +95,7 @@ internal sealed class DesktopWindow : Form
     private void OpenExternal(string target)
     {
         try { Process.Start(new ProcessStartInfo(target) { UseShellExecute = true }); }
-        catch (Exception error) { Log(error.ToString()); if (report == null) MessageBox.Show(this, error.Message, "无法打开", MessageBoxButtons.OK, MessageBoxIcon.Error); }
+        catch (Exception error) { Log(error.ToString()); if (report == null) MessageBox.Show(this, error.Message, "Unable to open", MessageBoxButtons.OK, MessageBoxIcon.Error); }
     }
 
     private bool Local(string address)
@@ -116,7 +116,7 @@ internal sealed class DesktopWindow : Form
         {
             Directory.CreateDirectory(data);
             try { instanceLock = new FileStream(Path.Combine(data, "desktop.lock"), FileMode.OpenOrCreate, FileAccess.ReadWrite, FileShare.None); }
-            catch (IOException) { throw new InvalidOperationException("此数据目录已有 dubvibe_mini 桌面实例运行。"); }
+            catch (IOException) { throw new InvalidOperationException("A dubvibe_mini desktop instance is already running in this data folder."); }
             Directory.CreateDirectory(Path.Combine(data, "logs"));
             log = new StreamWriter(new FileStream(Path.Combine(data, "logs", "desktop.log"), FileMode.Append, FileAccess.Write, FileShare.ReadWrite), new UTF8Encoding(false));
             Log("--- dubvibe_mini " + DateTimeOffset.Now.ToString("o") + " ---");
@@ -139,7 +139,7 @@ internal sealed class DesktopWindow : Form
             };
             browser.CoreWebView2.ProcessFailed += delegate(object sender, CoreWebView2ProcessFailedEventArgs e)
             {
-                if (!closing) Fail(new Exception("界面进程已退出：" + e.ProcessFailedKind));
+                if (!closing) Fail(new Exception("The UI process has exited: " + e.ProcessFailedKind));
             };
             var resources = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "resources");
             var start = new ProcessStartInfo(Path.Combine(resources, "node.exe"), "--expose-internals --import tsx apps/desktop/windows/bootstrap.mjs")
@@ -166,7 +166,7 @@ internal sealed class DesktopWindow : Form
             server.Exited += delegate
             {
                 if (closing) return;
-                var error = new Exception("本地服务已退出（" + server.ExitCode + "）。请查看日志后重新启动。");
+                var error = new Exception("The local service has exited (code " + server.ExitCode + "). Check the logs, then restart.");
                 ready.TrySetException(error);
                 if (origin != null && !IsDisposed) BeginInvoke(new Action(delegate { Fail(error); }));
             };
@@ -176,18 +176,18 @@ internal sealed class DesktopWindow : Form
             server.BeginErrorReadLine();
             server.StandardInput.WriteLine("start");
             server.StandardInput.Flush();
-            if (await Task.WhenAny(ready.Task, Task.Delay(90000)) != ready.Task) throw new TimeoutException("本地服务启动超时，请查看日志。");
+            if (await Task.WhenAny(ready.Task, Task.Delay(90000)) != ready.Task) throw new TimeoutException("The local service did not start in time. Check the logs.");
             string address = await ready.Task;
             if (closing) return;
             origin = new Uri(address);
-            if (origin.Scheme != "http" || origin.Host != "127.0.0.1") throw new Exception("本地服务返回了无效地址。");
+            if (origin.Scheme != "http" || origin.Host != "127.0.0.1") throw new Exception("The local service returned an invalid address.");
             await NavigateAsync(address);
             status.Visible = false;
             if (report != null) await SmokeAsync();
         }
         catch (WebView2RuntimeNotFoundException error)
         {
-            if (report == null && MessageBox.Show(this, "需要 Microsoft Edge WebView2 Runtime。是否打开微软下载页面？", "dubvibe_mini", MessageBoxButtons.YesNo, MessageBoxIcon.Information) == DialogResult.Yes)
+            if (report == null && MessageBox.Show(this, "Microsoft Edge WebView2 Runtime is required. Open the Microsoft download page?", "dubvibe_mini", MessageBoxButtons.YesNo, MessageBoxIcon.Information) == DialogResult.Yes)
                 OpenExternal("https://developer.microsoft.com/microsoft-edge/webview2/");
             Fail(error);
         }
@@ -199,13 +199,13 @@ internal sealed class DesktopWindow : Form
         var loaded = new TaskCompletionSource<bool>();
         EventHandler<CoreWebView2NavigationCompletedEventArgs> handler = delegate(object sender, CoreWebView2NavigationCompletedEventArgs e)
         {
-            if (e.IsSuccess) loaded.TrySetResult(true); else loaded.TrySetException(new Exception("页面加载失败：" + e.WebErrorStatus));
+            if (e.IsSuccess) loaded.TrySetResult(true); else loaded.TrySetException(new Exception("Page failed to load: " + e.WebErrorStatus));
         };
         browser.CoreWebView2.NavigationCompleted += handler;
         try
         {
             browser.CoreWebView2.Navigate(address);
-            if (await Task.WhenAny(loaded.Task, Task.Delay(30000)) != loaded.Task) throw new TimeoutException("页面加载超时。");
+            if (await Task.WhenAny(loaded.Task, Task.Delay(30000)) != loaded.Task) throw new TimeoutException("Page load timed out.");
             await loaded.Task;
         }
         finally { browser.CoreWebView2.NavigationCompleted -= handler; }
@@ -232,10 +232,10 @@ internal sealed class DesktopWindow : Form
             bool rendered = false;
             for (int attempt = 0; attempt < 100; attempt++)
             {
-                if (await browser.ExecuteScriptAsync("!!document.querySelector('section[aria-label=\"环境准备\"]')") == "true") { rendered = true; break; }
+                if (await browser.ExecuteScriptAsync("!!document.querySelector('section[aria-label=\"Environment setup\"]')") == "true") { rendered = true; break; }
                 await Task.Delay(100);
             }
-            if (!rendered) throw new Exception("首次准备界面未在 WebView2 渲染：" + path);
+            if (!rendered) throw new Exception("The first-run preparation screen did not render in WebView2: " + path);
         }
         await NavigateAsync(new Uri(origin, "/examples/index.html").ToString());
         bool exampleLoaded = false;
@@ -244,7 +244,7 @@ internal sealed class DesktopWindow : Form
             if (await browser.ExecuteScriptAsync("Array.from(document.querySelectorAll('video')).some(v => v.readyState >= 1 && v.videoWidth > 0)") == "true") { exampleLoaded = true; break; }
             await Task.Delay(100);
         }
-        if (!exampleLoaded) throw new Exception("内置示例视频未在 WebView2 加载。");
+        if (!exampleLoaded) throw new Exception("The bundled example videos did not load in WebView2.");
         using (var png = File.Create(report + ".png")) await browser.CoreWebView2.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, png);
         WriteReport(new { ok = true, url = origin.ToString(), serverPid = server.Id, browserPid = browser.CoreWebView2.BrowserProcessId, webview2 = browser.CoreWebView2.Environment.BrowserVersionString, routes = routes, rendered = new[] { "/", "/tasks", "/settings", "/examples/index.html" } });
         if (!hold) Close();
@@ -261,7 +261,7 @@ internal sealed class DesktopWindow : Form
         Environment.ExitCode = 1;
         Log(error.ToString());
         if (report != null) WriteReport(new { ok = false, error = error.ToString() });
-        else MessageBox.Show(this, error.Message + "\n\n日志：" + Path.Combine(data, "logs", "desktop.log"), "dubvibe_mini 启动失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        else MessageBox.Show(this, error.Message + "\n\nLogs: " + Path.Combine(data, "logs", "desktop.log"), "dubvibe_mini failed to start", MessageBoxButtons.OK, MessageBoxIcon.Error);
         Close();
     }
 
