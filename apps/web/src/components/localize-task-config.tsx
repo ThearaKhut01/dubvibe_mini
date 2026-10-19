@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/u
 import { Switch } from "@/components/ui/switch"
 import { cn } from "@/lib/utils"
 import type { Capability, ModelCapability, ModelSelection, Runtime, TaskConfig, TtsSelection } from "@/plugin/builtin/localize-contracts"
-import { useText, uiLanguage, type Text } from "@/lib/i18n"
+import { useText, type Text } from "@/lib/i18n"
 
 const OUTPUT_LABELS: Record<TaskConfig["output_mode"], [string, string, string?]> = {
   subtitles: ["Subtitles · original audio", "Subtitles · original audio", "ចំណងជើង · សំឡេងដើម"],
@@ -95,14 +95,10 @@ function updateConfig(config: TaskConfig, patch: Partial<TaskConfig>, runtime: R
   return normalize({ ...config, ...patch }, runtime)
 }
 
-const SUPPORTED_TARGETS = new Set(Object.keys(LANGUAGE_NAMES))
-
-// The friendliest default target language is the interface language when the
-// pipeline supports it (Khmer UI → Khmer…); English UI falls back to English.
-// Chinese remains supported but is no longer the silent default.
+// The product's default target language is Khmer — the audience this localized
+// build serves; Chinese and English stay selectable in the To-language list.
 function defaultTargetLanguage() {
-  const language = uiLanguage()
-  return SUPPORTED_TARGETS.has(language) ? language : "en"
+  return "km"
 }
 
 export function initialTaskConfig(runtime: Runtime, defaults?: Partial<TaskConfig> | null): TaskConfig {
