@@ -129,7 +129,7 @@ $skipped = @()
 try {
   foreach ($file in $files) {
     $name = $base + '/' + $file.Substring($root.Length + 1)
-    while ($name.Contains('\\')) { $name = $name.Replace('\\', '/') }
+    $name = $name -replace '\\', '/'
     $copied = $false
     for ($attempt = 1; $attempt -le 3; $attempt++) {
       try {
