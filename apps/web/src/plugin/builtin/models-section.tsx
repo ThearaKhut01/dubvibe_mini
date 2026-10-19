@@ -12,12 +12,12 @@ const GB = 1024 ** 3, MB = 1024 ** 2
 const size = (bytes: number) => (bytes >= GB ? `${(bytes / GB).toFixed(2)} GB` : `${Math.round(bytes / MB)} MB`)
 
 // Fixed display order for known model categories; unexpected categories are appended.
-const CATEGORY_LABELS: Record<string, readonly [string, string]> = {
-  asr: ['Speech recognition', '语音识别'],
-  translation: ['Local translation', '本地翻译'],
-  tts: ['Voice cloning', '声音克隆'],
-  separation: ['Vocal separation', '人声分离'],
-  alignment: ['Subtitle alignment', '字幕对齐'],
+const CATEGORY_LABELS: Record<string, readonly [string, string, string?]> = {
+  asr: ['Speech recognition', '语音识别', 'ការសម្គាល់សំឡេង'],
+  translation: ['Local translation', '本地翻译', 'ការបកប្រែក្នុងស្រុក'],
+  tts: ['Voice cloning', '声音克隆', 'ការក្លូនសំឡេង'],
+  separation: ['Vocal separation', '人声分离', 'ការបំបែកសំឡេង'],
+  alignment: ['Subtitle alignment', '字幕对齐', 'ការតម្រឹមចំណងជើង'],
 }
 
 // Groups models by category behind one collapsible header per category.
@@ -113,8 +113,8 @@ export function ModelsSection() {
 
   return (
     <section className="rounded-2xl border border-border bg-card p-5 shadow-card">
-      <h2 className="mb-1 text-base font-semibold">{tx('Local models', '本地模型')}</h2>
-      <p className="mb-4 text-xs text-muted-foreground">{tx('Remove a model to free disk space, or download extra Whisper sizes here.', '删除模型以释放磁盘空间，也可在此下载其他 Whisper 规格。')}</p>
+      <h2 className="mb-1 text-base font-semibold">{tx('Local models', '本地模型', 'ម៉ូដែលក្នុងស្រុក')}</h2>
+      <p className="mb-4 text-xs text-muted-foreground">{tx('Remove a model to free disk space, or download extra Whisper sizes here.', '删除模型以释放磁盘空间，也可在此下载其他 Whisper 规格。', 'លុបម៉ូដែលដើម្បីបញ្ចេញចន្លោះឌីសក ឬទាញយកទំហំ Whisper បន្ថែមទីនេះ។')}</p>
       {failure && <InlineAlert>{failure}</InlineAlert>}
       {groups.map(group => {
         const expanded = open[group.key] ?? false
@@ -126,10 +126,10 @@ export function ModelsSection() {
               onClick={() => setOpen(previous => ({ ...previous, [group.key]: !expanded }))}>
               <span className="flex min-w-0 items-center gap-2 text-sm font-medium">
                 <ChevronDown className={`size-4 shrink-0 text-muted-foreground transition-transform ${expanded ? '' : '-rotate-90'}`} />
-                {tx(group.label[0], group.label[1])}
-                {failed > 0 && <span className="font-normal text-xs text-status-danger-fg">· {tx('download failed', '下载失败')}</span>}
+                {tx(group.label[0], group.label[1], group.label[2])}
+                {failed > 0 && <span className="font-normal text-xs text-status-danger-fg">· {tx('download failed', '下载失败', 'ការទាញយកបរាជ័យ')}</span>}
               </span>
-              <span className="shrink-0 text-xs text-muted-foreground">{tx('Installed', '已安装')} {installed}/{group.items.length}</span>
+              <span className="shrink-0 text-xs text-muted-foreground">{tx('Installed', '已安装', 'បានដំឡើង')} {installed}/{group.items.length}</span>
             </button>
             {expanded && (
               <ul className="divide-y divide-border pb-3">
@@ -142,27 +142,27 @@ export function ModelsSection() {
                         <p className="truncate text-sm font-medium">{model.name}{model.variant && <span className="ml-1.5 text-xs font-normal text-muted-foreground">{model.variant}</span>}</p>
                         <p className="text-xs text-muted-foreground">
                           {size(total)} ·{' '}
-                          {model.busy ? `${tx('Downloading', '下载中')} ${percent}% · ${(model.speed / MB).toFixed(1)} MB/s`
-                            : model.installed ? tx('Installed', '已安装')
-                            : model.status === 'paused' ? tx('Paused', '已暂停')
-                            : model.status === 'failed' ? tx('Failed', '失败')
-                            : tx('Not installed', '未安装')}
+                          {model.busy ? `${tx('Downloading', '下载中', 'កំពុងទាញយក')} ${percent}% · ${(model.speed / MB).toFixed(1)} MB/s`
+                            : model.installed ? tx('Installed', '已安装', 'បានដំឡើង')
+                            : model.status === 'paused' ? tx('Paused', '已暂停', 'បានផ្អាក')
+                            : model.status === 'failed' ? tx('Failed', '失败', 'បរាជ័យ')
+                            : tx('Not installed', '未安装', 'មិនបានដំឡើង')}
                         </p>
                         {model.error && <p className="mt-0.5 text-xs text-status-danger-fg">{model.error}</p>}
                       </div>
                       {model.installed ? (
                         <Button variant="outline" size="sm" disabled={busy || model.busy} onClick={() => void remove(model.id)}>
-                          <Trash2 /> {tx('Remove', '删除')}
+                          <Trash2 /> {tx('Remove', '删除', 'លុបចេញ')}
                         </Button>
                       ) : model.status === 'downloading' || model.busy ? (
                         <Button variant="outline" size="sm" disabled={busy} onClick={() => void control(model.id, 'pause')}>
-                          <Pause /> {tx('Pause', '暂停')}
+                          <Pause /> {tx('Pause', '暂停', 'ផ្អាក')}
                         </Button>
                       ) : (
                         <Button variant="outline" size="sm" disabled={busy} onClick={() => void control(model.id, 'start')}>
-                          {model.status === 'paused' ? <><Play /> {tx('Resume', '继续')}</>
-                            : model.status === 'failed' ? <><RotateCcw /> {tx('Retry', '重试')}</>
-                            : <><ArrowDownToLine /> {tx('Download', '下载')}</>}
+                          {model.status === 'paused' ? <><Play /> {tx('Resume', '继续', 'បន្ត')}</>
+                            : model.status === 'failed' ? <><RotateCcw /> {tx('Retry', '重试', 'ព្យាយាមឡើងវិញ')}</>
+                            : <><ArrowDownToLine /> {tx('Download', '下载', 'ទាញយក')}</>}
                         </Button>
                       )}
                     </li>

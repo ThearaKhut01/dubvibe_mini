@@ -12,9 +12,9 @@ import type { Capability, ModelCapability, ModelSelection, Runtime, TaskConfig, 
 import { useText, type Text } from "@/lib/i18n"
 
 const OUTPUT_LABELS: Record<TaskConfig["output_mode"], [string, string, string?]> = {
-  subtitles: ["Subtitles · original audio", "Subtitles · original audio"],
-  dubbing: ["Dubbing", "Dubbing"],
-  both: ["Dubbing and subtitles", "Dubbing and subtitles"],
+  subtitles: ["Subtitles · original audio", "Subtitles · original audio", "ចំណងជើង · សំឡេងដើម"],
+  dubbing: ["Dubbing", "Dubbing", "បញ្ចូលសំឡេង"],
+  both: ["Dubbing and subtitles", "Dubbing and subtitles", "បញ្ចូលសំឡេង និងចំណងជើង"],
 }
 
 const LANGUAGE_NAMES: Record<string, string> = { en: "English", zh: "Chinese", ja: "Japanese", km: "Khmer" }
@@ -26,7 +26,7 @@ function languageName(code: string, text: Text) {
 
 function deviceName(device: string, text: Text, runtime: Runtime) {
   if (device === "cpu") return "CPU"
-  if (device === "remote") return text("Remote", "远端")
+  if (device === "remote") return text("Remote", "远端", "បណ្ដាញ")
   if (device === "mps") return "Apple MPS"
   const entry = runtime.devices.find(item => item.id === device)
   if (entry?.backend === "rocm") return `AMD ROCm ${device.split(":")[1]}`
@@ -164,7 +164,7 @@ function ModelLabel({ value, text, runtime }: { value: ModelSelection; text: Tex
   return <span className="min-w-0 truncate">
     <span className="font-medium text-foreground">{value.model}</span>{" "}
     <span className="text-subtle-foreground">{value.device === "remote"
-      ? text("Remote API", "远端接口")
+      ? text("Remote API", "远端接口", "ចំណុចប្រទាក់បណ្ដាញ")
       : `${adapterName(value.adapter, text)} · ${deviceName(value.device, text, runtime)}`}</span>
   </span>
 }
@@ -236,7 +236,7 @@ function ModelField({ kind, id, caption, srPrefix, value, runtime, onChange }: {
         <ModelLabel value={value} text={text} runtime={runtime} />
         {known ? null : <span className="ml-1.5 shrink-0 text-status-warning-fg">· {text("Unavailable", "不可用", "\u1798\u17B7\u1793\u17A2\u17B6\u1785\u1794\u17D2\u179A\u17BE\u1794\u17B6\u1793")}</span>}
       </> : null}
-      placeholder={text("Select a model", "选择模型")}
+      placeholder={text("Select a model", "选择模型", "ជ្រើសរើសម៉ូដែល")}
       options={[
         ...options.map((item) => ({ value: selectionKey(item.value), label: <ModelLabel value={item.value} text={text} runtime={runtime} /> })),
         ...runtime.capabilities.filter((item) => item.capability === kind && !item.available).map((item) => ({
@@ -256,7 +256,7 @@ function LanguageField({ id, caption, value, options, onChange }: {
   const text = useText()
   return <Field id={id} caption={caption}>
     <FieldSelect id={id} value={value} display={value ? languageName(value, text) : null}
-      placeholder={text("Select a language", "选择语言")}
+      placeholder={text("Select a language", "选择语言", "ជ្រើសរើសភាសា")}
       options={options.map((item) => ({ value: item, label: languageName(item, text) }))} onChange={onChange} />
   </Field>
 }
@@ -274,12 +274,12 @@ export function TaskConfigForm({ value, runtime, onChange }: {
   const presetVoices = tts?.voices.filter((voice) => voice.languages.includes(value.target_language)) ?? []
   const voice = value.tts?.voice
   const voiceModes = tts?.voice_modes ?? []
-  const voiceModeLabel = (mode: string) => mode === "preset" ? text("Preset voice", "预设声音") : text("Clone source voice", "克隆源音色")
+  const voiceModeLabel = (mode: string) => mode === "preset" ? text("Preset voice", "预设声音", "សំឡេងកំណត់ស្រាប់") : text("Clone source voice", "克隆源音色", "ក្លូនសំឡេងដើម")
   const dubbing = value.output_mode !== "subtitles"
 
   return <div className="@container divide-y divide-border">
       <ConfigRow icon={Clapperboard} tint="neutral" title={text("Output", "输出", "\u179B\u1791\u17D2\u1792\u1795\u179B")}
-        description={text("Subtitles, a dubbed cut, or both.", "生成字幕、配音成片，或两者都要。")}>
+        description={text("Subtitles, a dubbed cut, or both.", "生成字幕、配音成片，或两者都要。", "ចំណងជើង ឬភាពយន្តបញ្ចូលសំឡេង ឬទាំងពីរ។")}>
         <Field id="output-mode" caption={text("Content", "内容", "\u1798\u17B6\u178F\u17B7\u1780\u17B6")} srPrefix={text("Output ", "输出", "\u179B\u1791\u17D2\u1792\u1795\u179B ")}>
           <FieldSelect id="output-mode" value={value.output_mode} display={text(...OUTPUT_LABELS[value.output_mode])} placeholder=""
             options={Object.entries(OUTPUT_LABELS).map(([mode, label]) => ({ value: mode, label: text(...label) }))}
@@ -294,33 +294,33 @@ export function TaskConfigForm({ value, runtime, onChange }: {
 
     <ConfigRow icon={Mic} tint="blue" title={text("Speech recognition", "语音识别", "\u1780\u17B6\u179A\u179F\u1798\u17D2\u1782\u17B6\u179B\u17CB\u179F\u17C6\u17A1\u17C1\u1784")}
       description={text("Turns speech into text. Name hints help with people and brands.", "把语音转成文字，专名提示能让人名、品牌名更准确。")}>
-      <ModelField kind="asr" id="model-asr" caption={text("Model", "模型")} srPrefix={text("Speech recognition ", "语音识别", "\u1780\u17B6\u179A\u179F\u1798\u17D2\u1782\u17B6\u179B\u17CB\u179F\u17C6\u17A1\u17C1\u1784 ")} value={value.asr} runtime={runtime} onChange={(asr) => change({ asr: { ...value.asr, ...asr } })} />
+      <ModelField kind="asr" id="model-asr" caption={text("Model", "模型", "ម៉ូដែល")} srPrefix={text("Speech recognition ", "语音识别", "\u1780\u17B6\u179A\u179F\u1798\u17D2\u1782\u17B6\u179B\u17CB\u179F\u17C6\u17A1\u17C1\u1784 ")} value={value.asr} runtime={runtime} onChange={(asr) => change({ asr: { ...value.asr, ...asr } })} />
       <Field id="asr-initial-prompt" caption={text("Proper-name hint (optional)", "专名提示（可选）")}>
         <div className="relative">
           <Input id="asr-initial-prompt" maxLength={500} value={value.asr.initial_prompt ?? ""} aria-describedby="asr-initial-prompt-help" className="pr-16"
-            placeholder={text("e.g. dubvibe_mini, Jensen Huang", "例如：dubvibe_mini、黄仁勋")}
+            placeholder={text("e.g. dubvibe_mini, Jensen Huang", "例如：dubvibe_mini、黄仁勋", "ឧ. dubvibe_mini, Jensen Huang")}
             onChange={(event) => change({ asr: { ...value.asr, initial_prompt: event.target.value || null } })} />
           <span aria-hidden="true" className="pointer-events-none absolute top-1/2 right-3 -translate-y-1/2 text-xs tabular-nums text-subtle-foreground">{value.asr.initial_prompt?.length ?? 0}/500</span>
         </div>
-        <p id="asr-initial-prompt-help" className="sr-only">{text("Add people or brand names to help speech recognition. Up to 500 characters.", "填写人名、品牌名，帮助语音识别。最多 500 字。")}</p>
+        <p id="asr-initial-prompt-help" className="sr-only">{text("Add people or brand names to help speech recognition. Up to 500 characters.", "填写人名、品牌名，帮助语音识别。最多 500 字。", "បំពេញឈ្មោះមនុស្ស ឬឈ្មោះម៉ាក ជួយការសម្គាល់សំឡេង។ អតិបរមា 500 តួអក្សរ។")}</p>
       </Field>
     </ConfigRow>
 
     <ConfigRow icon={Languages} tint="violet" title={text("Translation", "翻译", "\u1780\u17B6\u179A\u1794\u1780\u1794\u17D2\u179A\u17C2")}
       description={text("Translates the transcript sentence by sentence.", "逐句翻译识别出的原文。")}>
-      <ModelField kind="translation" id="model-translation" caption={text("Model", "模型")} srPrefix={text("Translation ", "翻译", "\u1780\u17B6\u179A\u1794\u1780\u1794\u17D2\u179A\u17C2 ")} value={value.translation} runtime={runtime} onChange={(translation) => change({ translation })} />
+      <ModelField kind="translation" id="model-translation" caption={text("Model", "模型", "ម៉ូដែល")} srPrefix={text("Translation ", "翻译", "\u1780\u17B6\u179A\u1794\u1780\u1794\u17D2\u179A\u17C2 ")} value={value.translation} runtime={runtime} onChange={(translation) => change({ translation })} />
     </ConfigRow>
 
     {value.output_mode === "both" ? <ConfigRow icon={Captions} tint="teal" title={text("Subtitles", "字幕", "\u17A2\u1780\u17D2\u179F\u179A\u179A\u1784")}
       description={text("Qwen can align subtitles to the generated speech, keeping full-sentence dubbing.", "Qwen 可以按生成的配音对齐字幕，仍保持整句配音。")}>
-      <Field id="subtitle-alignment" caption={text("Timing", "时间")} srPrefix={text("Subtitle ", "字幕")}>
+      <Field id="subtitle-alignment" caption={text("Timing", "时间", "ពេលវេលា")} srPrefix={text("Subtitle ", "字幕", "ចំណងជើង ")}>
         <FieldSelect id="subtitle-alignment" value={value.subtitle_alignment ? alignmentKey : ESTIMATE_TIMING}
           display={value.subtitle_alignment
             ? `${value.subtitle_alignment.model} · ${alignmentKnown ? deviceName(value.subtitle_alignment.device, text, runtime) : text("Unavailable", "不可用", "\u1798\u17B7\u1793\u17A2\u17B6\u1785\u1794\u17D2\u179A\u17BE\u1794\u17B6\u1793")}`
-            : text("Estimate by text length", "按字数估算")}
+            : text("Estimate by text length", "按字数估算", "ប៉ាន់ស្មានតាមប្រវែងអត្ថបទ")}
           placeholder=""
           options={[
-            { value: ESTIMATE_TIMING, label: text("Estimate by text length", "按字数估算") },
+            { value: ESTIMATE_TIMING, label: text("Estimate by text length", "按字数估算", "ប៉ាន់ស្មានតាមប្រវែងអត្ថបទ") },
             ...alignmentOptions.map((item) => ({ value: selectionKey(item.value), label: `${item.value.model} · ${deviceName(item.value.device, text, runtime)}` })),
             ...runtime.capabilities.filter((item) => item.capability === "subtitle_alignment" && !item.available).map((item) => ({
               value: `unavailable-${item.adapter}`, label: `Qwen — ${item.unavailable_reason ?? text("Unavailable", "不可用", "\u1798\u17B7\u1793\u17A2\u17B6\u1785\u1794\u17D2\u179A\u17BE\u1794\u17B6\u1793")}`, disabled: true,
@@ -330,17 +330,17 @@ export function TaskConfigForm({ value, runtime, onChange }: {
       </Field>
     </ConfigRow> : null}
 
-    {dubbing ? <ConfigRow icon={Speech} tint="red" title={text("Dubbing", "配音")}
-      description={text("Speaks the translation in the target language.", "用目标语言为译文配音。")}>
-      <ModelField kind="tts" id="model-tts" caption={text("Model", "模型")} srPrefix={text("Voice ", "配音", "\u179F\u17C6\u17A1\u17C1\u1784 ")} value={value.tts} runtime={runtime} onChange={(selection) => change({ tts: selectTts(runtime, selection, value.target_language) })} />
-      {value.tts && voice ? <Field caption={text("Voice source", "声音方式")}>
+    {dubbing ? <ConfigRow icon={Speech} tint="red" title={text("Dubbing", "配音", "បញ្ចូលសំឡេង")}
+      description={text("Speaks the translation in the target language.", "用目标语言为译文配音。", "អានការបកប្រែជាភាសាគោលដៅ។")}>
+      <ModelField kind="tts" id="model-tts" caption={text("Model", "模型", "ម៉ូដែល")} srPrefix={text("Voice ", "配音", "\u179F\u17C6\u17A1\u17C1\u1784 ")} value={value.tts} runtime={runtime} onChange={(selection) => change({ tts: selectTts(runtime, selection, value.target_language) })} />
+      {value.tts && voice ? <Field caption={text("Voice source", "声音方式", "ប្រភពសំឡេង")}>
         {voiceModes.length > 1 ? (
-          <Segmented ariaLabel={text("Voice source", "声音方式")} value={voice.mode} className="flex h-10 w-full"
+          <Segmented ariaLabel={text("Voice source", "声音方式", "ប្រភពសំឡេង")} value={voice.mode} className="flex h-10 w-full"
             options={voiceModes.map((mode) => ({ value: mode, label: voiceModeLabel(mode) }))}
             onChange={(mode) => change({ tts: { ...value.tts!, voice: mode === "source_clone"
               ? { mode: "source_clone" } : { mode: "preset", id: presetVoices[0]?.id ?? "" } } })} />
         ) : (
-          <div role="group" aria-label={text("Voice source", "声音方式")}
+          <div role="group" aria-label={text("Voice source", "声音方式", "ប្រភពសំឡេង")}
             className={cn("flex h-10 items-center rounded-lg border border-input bg-input-bg px-3 text-sm", !voiceModes.includes(voice.mode) && "text-status-warning-fg")}>
             {voiceModes.includes(voice.mode) ? voiceModeLabel(voice.mode) : text("Unavailable", "不可用", "\u1798\u17B7\u1793\u17A2\u17B6\u1785\u1794\u17D2\u179A\u17BE\u1794\u17B6\u1793")}
           </div>
@@ -348,21 +348,21 @@ export function TaskConfigForm({ value, runtime, onChange }: {
       </Field> : null}
       {value.tts && voice?.mode === "preset" ? <Field id="voice-id" caption={text("Voice", "声音", "\u179F\u17C6\u17A1\u17C1\u1784")}>
         <FieldSelect id="voice-id" value={voice.id} display={presetVoices.find((item) => item.id === voice.id)?.name ?? null}
-          placeholder={text("Select a voice", "选择声音")}
+          placeholder={text("Select a voice", "选择声音", "ជ្រើសរើសសំឡេង")}
           options={presetVoices.map((item) => ({ value: item.id, label: item.name }))}
           onChange={(id) => change({ tts: { ...value.tts!, voice: { mode: "preset", id } } })} />
       </Field> : null}
     </ConfigRow> : null}
 
     {dubbing ? <ConfigRow icon={AudioWaveform} tint="pink" title={text("Vocal separation", "人声分离", "\u1780\u17B6\u179A\u1789\u17C2\u1780\u179F\u17C6\u17A1\u17C1\u1784")}
-      description={text("Separates the voice from music and ambience, for voice cloning and keeping the background.", "把人声和背景声分开，用于克隆音色和保留背景音。")}>
+      description={text("Separates the voice from music and ambience, for voice cloning and keeping the background.", "把人声和背景声分开，用于克隆音色和保留背景音。", "បំបែកសំឡេងមនុស្សចេញពីតន្ត្រី និងបរិយាកាស សម្រាប់ក្លូនសំឡេង និងរក្សាសំឡេងផ្ទៃរងំ។")}>
       <Field caption={text("Background audio", "背景音", "\u179F\u17C6\u17A1\u17C1\u1784\u1795\u17D2\u1791\u17C3\u1781\u17B6\u1784\u1780\u17D2\u179A\u17C4\u1799")}>
         <label className="flex h-10 cursor-pointer items-center justify-between gap-3 rounded-lg border border-input bg-input-bg px-3 text-sm">
-          <span id="keep-background-label">{text("Keep background audio", "保留背景音")}</span>
+          <span id="keep-background-label">{text("Keep background audio", "保留背景音", "រក្សាទុកសំឡេងផ្ទៃរងំ")}</span>
           <Switch aria-labelledby="keep-background-label" checked={value.keep_background} onCheckedChange={(checked) => change({ keep_background: checked })} />
         </label>
       </Field>
-      {value.separation ? <ModelField kind="separation" id="model-separation" caption={text("Model", "模型")} srPrefix={text("Audio separation ", "音源分离", "音源分離")} value={value.separation} runtime={runtime} onChange={(separation) => change({ separation })} /> : null}
+      {value.separation ? <ModelField kind="separation" id="model-separation" caption={text("Model", "模型", "ម៉ូដែល")} srPrefix={text("Audio separation ", "音源分离", "ការបំបែកសំឡេង ")} value={value.separation} runtime={runtime} onChange={(separation) => change({ separation })} /> : null}
     </ConfigRow> : null}
   </div>
 }
