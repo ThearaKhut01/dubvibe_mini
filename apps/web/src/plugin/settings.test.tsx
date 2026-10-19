@@ -66,8 +66,8 @@ it('offers a Custom API card without a saved connection and sends its model to t
     if (init?.method === 'POST') return { ok: true }
     if (path === '/api/v2/settings') return { connections: [] }
     if (path === '/api/v2/catalog') return { workflows: [], providers: [
-      { id: 'openai', adapter: 'openai', label: 'OpenAI', operations: [], available: true, requires_api_key: true, models: [{ id: 'gpt', devices: ['remote'] }] },
-      { id: 'custom', adapter: 'custom', label: 'Custom API', operations: [], available: false, requires_api_key: true, models: [{ id: 'gpt-4.1-mini', devices: ['remote'] }] },
+      { id: 'openai', adapter: 'openai', label: 'OpenAI', operations: [], execution: 'remote', available: true, requires_api_key: true, models: [{ id: 'gpt', devices: ['remote'] }] },
+      { id: 'custom', adapter: 'custom', label: 'Custom API', operations: [], execution: 'remote', available: false, requires_api_key: true, models: [] },
     ] }
     return { items: [] }
   })

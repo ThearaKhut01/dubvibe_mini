@@ -14,7 +14,7 @@ export type WorkflowDescription = {
 }
 export type ProviderDescription = {
   id: string; label?: LocalizedText; operations: { id: string }[]; capability?: string; adapter?: string; contractVersion?: string
-  ready?: boolean; available?: boolean; reason?: string; unavailableReason?: string
+  ready?: boolean; available?: boolean; reason?: string; unavailableReason?: string; execution?: 'local' | 'remote'
   models?: Array<string | { id: string; devices?: string[]; languages?: string[] }>; requires_api_key?: boolean
   configSchema?: JsonSchema; parametersSchema?: JsonSchema
 }
