@@ -154,7 +154,7 @@ run(join(system, 'WindowsPowerShell/v1.0/powershell.exe'), ['-NoProfile', '-NonI
 await writeFile(zip + '.sha256', `${await sha256(zip)}  ${basename(zip)}\n`)
 console.log(`Built ${zip}`)
 // Single-file bootstrap: one exe with the ZIP embedded, unpacked on first run
-// to %LOCALAPPDATA%\YouDub\app. The stamp changes per build so updated exes
+// to %LOCALAPPDATA%\dubvibe_mini\app. The stamp changes per build so updated exes
 // re-unpack over an older extracted tree.
 const stamp = createHash('sha256').update(await readFile(zip)).digest('hex').slice(0, 16)
 await writeFile(join(cache, 'selfextract-source.cs'), (await readFile(join(root, 'apps/desktop/windows/selfextract.cs'), 'utf8')).replace('__STAMP__', stamp), 'utf8')
@@ -164,7 +164,7 @@ run(join(process.env.SystemRoot || 'C:/Windows', 'Microsoft.NET/Framework64/v4.0
   `/win32manifest:${join(root, 'apps/desktop/windows/app.manifest')}`,
   '/reference:System.dll', '/reference:System.Core.dll', '/reference:System.Drawing.dll', '/reference:System.Windows.Forms.dll',
   '/reference:System.IO.Compression.dll', '/reference:System.IO.Compression.FileSystem.dll',
-  `/embedresource:${zip},dubvibe_mini.resources.zip`,
+  `/resource:${zip},dubvibe_mini.resources.zip`,
   join(cache, 'selfextract-source.cs'),
 ])
 await writeFile(oneFile + '.sha256', `${await sha256(oneFile)}  ${basename(oneFile)}\n`)

@@ -14,7 +14,7 @@
 
 Windows x64 便携包由新增的 Windows 发布流程生成，适用于 Windows 10 22H2 / Windows 11；历史 tag 不会自动补发。下载包含 `dubvibe_mini-<version>-windows-x64.zip` 的 Release，使用 PowerShell 的 `Get-FileHash <zip路径> -Algorithm SHA256` 与相邻 `.sha256` 文件核对后，将整个 ZIP 解压到本地目录，运行 `dubvibe_mini.exe`。需要 WebView2 Evergreen Runtime，缺少时启动器会提供微软下载入口。此便携包尚未进行 Authenticode 签名。
 
-升级前关闭 YouDub，将新包解压到新的应用目录。保留 `%LOCALAPPDATA%\YouDub` 中的模型、任务和配置，以及 Windows 凭据管理器中的翻译密钥；不要把新旧版本同时运行在同一个数据目录。日志位于 `%LOCALAPPDATA%\YouDub\logs\desktop.log`。使用 `DUBVIBE_MINI_DESKTOP_DATA_DIR` 时，数据和日志位于指定目录。
+升级前关闭 dubvibe_mini，将新包解压到新的应用目录。保留 `%LOCALAPPDATA%\dubvibe_mini` 中的模型、任务和配置，以及 Windows 凭据管理器中的翻译密钥；不要把新旧版本同时运行在同一个数据目录。日志位于 `%LOCALAPPDATA%\dubvibe_mini\logs\desktop.log`。使用 `DUBVIBE_MINI_DESKTOP_DATA_DIR` 时，数据和日志位于指定目录。
 
 Windows 本机验收覆盖打包、原生窗口、首次翻译配置、路径兼容性、任务生命周期和服务退出，并使用实际 Windows 包在 GTX 1080 Ti 上完成真实视频的识别、翻译、配音、字幕对齐和导出。真实任务复用已准备的 Python 与模型缓存，不代表全新机器上的完整模型下载已验收，详见[验收记录](validation/windows-desktop-2026-10-16.md)。
 

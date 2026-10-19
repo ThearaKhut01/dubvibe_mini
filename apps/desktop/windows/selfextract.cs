@@ -1,6 +1,6 @@
 // One-file bootstrap for dubvibe_mini on Windows x64.
 // Embeds the portable ZIP (csc /embedresource) and unpacks it on first run to
-// %LOCALAPPDATA%\YouDub\app, then launches the regular launcher from there.
+// %LOCALAPPDATA%\dubvibe_mini\app, then launches the regular launcher from there.
 // __STAMP__ is replaced with a fresh GUID for every build; the extracted tree
 // is re-unpacked whenever the stamp no longer matches.
 using System;
@@ -45,7 +45,7 @@ internal sealed class Bootstrap : Form
 
     internal static string AppRoot()
     {
-        return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "YouDub", "app");
+        return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "dubvibe_mini", "app");
     }
 
     internal static bool UpToDate()

@@ -93,7 +93,7 @@ Open the workspace directly; no access password is required. The application loa
 
 ### 3. Prepare models
 
-First startup downloads Whisper tiny, VoxCPM2, Demucs htdemucs and Qwen3 Aligner 0.6B in parallel, with real progress and individual or global pause/resume. The workspace opens after checksum and runtime checks. The default data directory is `~/Library/Application Support/YouDub` on macOS, `~/.local/share/youdub` on Linux, and `%LOCALAPPDATA%/YouDub` on Windows. Override it with `DUBVIBE_MINI_DESKTOP_DATA_DIR`.
+First startup downloads Whisper tiny, VoxCPM2, Demucs htdemucs and Qwen3 Aligner 0.6B in parallel, with real progress and individual or global pause/resume. The workspace opens after checksum and runtime checks. The default data directory is `~/Library/Application Support/YouDub` on macOS, `~/.local/share/youdub` on Linux, and `%LOCALAPPDATA%/dubvibe_mini` on Windows. Override it with `DUBVIBE_MINI_DESKTOP_DATA_DIR`.
 
 | Capability | Default provider | Model path, relative to the data directory |
 | --- | --- | --- |

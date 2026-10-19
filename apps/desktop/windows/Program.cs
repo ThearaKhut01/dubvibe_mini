@@ -41,7 +41,7 @@ internal sealed class DesktopWindow : Form
 
     public DesktopWindow(string[] args)
     {
-        data = Path.GetFullPath((Environment.GetEnvironmentVariable("DUBVIBE_MINI_DESKTOP_DATA_DIR") ?? Environment.GetEnvironmentVariable("YOUDUB_DESKTOP_DATA_DIR")) ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "YouDub"));
+        data = Path.GetFullPath((Environment.GetEnvironmentVariable("DUBVIBE_MINI_DESKTOP_DATA_DIR") ?? Environment.GetEnvironmentVariable("YOUDUB_DESKTOP_DATA_DIR")) ?? Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "dubvibe_mini"));
         if (args.Length == 2 && (args[0] == "--smoke-test" || args[0] == "--smoke-hold"))
         {
             report = Path.GetFullPath(args[1]);

@@ -46,7 +46,7 @@ DUBVIBE_MINI_APPLE_CREDENTIALS_DIR=/absolute/private/signing-directory node scri
 
 Windows 10 22H2 / Windows 11 使用原生 WinForms 窗口和 WebView2 Evergreen Runtime。启动 `dubvibe_mini.exe` 后自动运行内置 Node、Cordis Host 和 Next.js，不需要预装 Node。运行时缺少 WebView2 时会提供[微软安装入口](https://developer.microsoft.com/microsoft-edge/webview2/)；其分发方式遵循[官方说明](https://learn.microsoft.com/en-us/microsoft-edge/webview2/concepts/distribution)。启动器使用系统的 .NET Framework 4.8。
 
-数据、Python、模型和 WebView2 缓存位于 `%LOCALAPPDATA%\YouDub`，支持用 `DUBVIBE_MINI_DESKTOP_DATA_DIR` 覆盖。日志位于该数据目录的 `logs\desktop.log`，可通过窗口菜单打开。F5 / Ctrl+R 刷新。关闭窗口会先停止 Host；Windows Job Object 保证启动器崩溃时 Node 及其后代进程也退出。同一个数据目录仅允许一个桌面实例运行。
+数据、Python、模型和 WebView2 缓存位于 `%LOCALAPPDATA%\dubvibe_mini`，支持用 `DUBVIBE_MINI_DESKTOP_DATA_DIR` 覆盖。日志位于该数据目录的 `logs\desktop.log`，可通过窗口菜单打开。F5 / Ctrl+R 刷新。关闭窗口会先停止 Host；Windows Job Object 保证启动器崩溃时 Node 及其后代进程也退出。同一个数据目录仅允许一个桌面实例运行。
 
 默认窗口在当前屏幕可用区域内居中，占约 90% 的宽高；小屏幕会限制到可用范围内。环境与模型准备完成后，没有翻译配置的用户会看到接口地址、模型名称和密钥表单。点击“测试连接并继续”会发送一条简短测试请求，通过后才保存；密钥进入系统凭据管理器，不进入应用包或设置响应。也可选择“稍后配置”，之后在设置中填写。该配置向导同样适用于 macOS。
 

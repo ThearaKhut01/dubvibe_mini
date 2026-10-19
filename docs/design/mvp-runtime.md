@@ -61,7 +61,7 @@ MVP 业务数据使用新目录中的 `desktop.sqlite`，保留旧 WebUI 数据�
 
 | 平台 | 默认目录 |
 | --- | --- |
-| Windows | `%LOCALAPPDATA%/YouDub` |
+| Windows | `%LOCALAPPDATA%/dubvibe_mini` |
 | macOS | `~/Library/Application Support/YouDub` |
 | Linux | `$XDG_DATA_HOME/youdub`，未设置时为 `~/.local/share/youdub` |
 

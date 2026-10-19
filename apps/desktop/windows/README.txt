@@ -4,8 +4,8 @@ dubvibe_mini Windows x64
 需要 Microsoft Edge WebView2 Evergreen Runtime；缺少时启动器会提供微软下载入口。
 Node 已内置，无需安装 Node 或打开终端；首次启动准备 Python、FFmpeg 和模型。
 
-数据、模型和配置：%LOCALAPPDATA%\YouDub
-日志：%LOCALAPPDATA%\YouDub\logs\desktop.log
+数据、模型和配置：%LOCALAPPDATA%\dubvibe_mini
+日志：%LOCALAPPDATA%\dubvibe_mini\logs\desktop.log
 自定义数据目录：DUBVIBE_MINI_DESKTOP_DATA_DIR 环境变量。
 翻译密钥保存在 Windows 凭据管理器。
 
