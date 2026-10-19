@@ -113,8 +113,59 @@ async function check(directory) {
 }
 await check(app)
 const zip = join(root, `dist/dubvibe_mini-${appVersion}-windows-x64.zip`)
-// Use ZipFile rather than Compress-Archive, which omits hidden files.
-run(join(system, 'WindowsPowerShell/v1.0/powershell.exe'), ['-NoProfile', '-NonInteractive', '-Command',
-  "$ErrorActionPreference = 'Stop'; Add-Type -AssemblyName System.IO.Compression.FileSystem; if (Test-Path -LiteralPath $env:YOUDUB_ZIP) { Remove-Item -LiteralPath $env:YOUDUB_ZIP }; [IO.Compression.ZipFile]::CreateFromDirectory($env:YOUDUB_BUNDLE, $env:YOUDUB_ZIP, [IO.Compression.CompressionLevel]::Optimal, $true)"], { env: { ...process.env, YOUDUB_BUNDLE: app, YOUDUB_ZIP: zip } })
+// Zip per file instead of ZipFile.CreateFromDirectory: on-access scanners can briefly
+// lock or strip a file inside a fresh node_modules tree, which otherwise aborts the archive.
+const zipScript = `
+$ErrorActionPreference = 'Stop'
+Add-Type -AssemblyName System.IO.Compression
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+if (Test-Path -LiteralPath $env:YOUDUB_ZIP) { Remove-Item -LiteralPath $env:YOUDUB_ZIP }
+$root = $env:YOUDUB_BUNDLE
+$files = [System.Collections.Generic.List[string]](Get-ChildItem -LiteralPath $root -Recurse -File -Force | ForEach-Object { $_.FullName })
+$archive = [IO.Compression.ZipFile]::Open($env:YOUDUB_ZIP, [IO.Compression.ZipArchiveMode]::Create)
+$skipped = @()
+try {
+  foreach ($file in $files) {
+    $name = $file.Substring($root.Length + 1)
+    while ($name.Contains('\\')) { $name = $name.Replace('\\', '/') }
+    $copied = $false
+    for ($attempt = 1; $attempt -le 3; $attempt++) {
+      try {
+        [IO.Compression.ZipFileExtensions]::CreateEntryFromFile($archive, $file, $name, [IO.Compression.CompressionLevel]::Optimal) | Out-Null
+        $copied = $true; break
+      } catch [System.IO.FileNotFoundException], [System.IO.IOException] {
+        if ($attempt -lt 3) { Start-Sleep -Milliseconds 400 }
+      }
+    }
+    if (-not $copied) { $skipped += $file }
+  }
+} finally { $archive.Dispose() }
+if ($skipped.Count -gt 0) { throw ('Files missing while zipping: ' + ($skipped -join '; ')) }
+$verify = [IO.Compression.ZipFile]::OpenRead($env:YOUDUB_ZIP)
+try {
+  if ($verify.Entries.Count -ne $files.Count) { throw ('Archive mismatch: ' + $verify.Entries.Count + ' entries for ' + $files.Count + ' files.') }
+  Write-Output ('zipped ' + $files.Count + ' files')
+} finally { $verify.Dispose() }
+`.trim()
+run(join(system, 'WindowsPowerShell/v1.0/powershell.exe'), ['-NoProfile', '-NonInteractive', '-Command', zipScript],
+  { env: { ...process.env, YOUDUB_BUNDLE: app, YOUDUB_ZIP: zip } })
+
+
 await writeFile(zip + '.sha256', `${await sha256(zip)}  ${basename(zip)}\n`)
 console.log(`Built ${zip}`)
+// Single-file bootstrap: one exe with the ZIP embedded, unpacked on first run
+// to %LOCALAPPDATA%\YouDub\app. The stamp changes per build so updated exes
+// re-unpack over an older extracted tree.
+const stamp = createHash('sha256').update(await readFile(zip)).digest('hex').slice(0, 16)
+await writeFile(join(cache, 'selfextract-source.cs'), (await readFile(join(root, 'apps/desktop/windows/selfextract.cs'), 'utf8')).replace('__STAMP__', stamp), 'utf8')
+const oneFile = join(root, `dist/dubvibe_mini-${appVersion}-windows-x64-onefile.exe`)
+run(join(process.env.SystemRoot || 'C:/Windows', 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'), [
+  '/nologo', '/target:winexe', '/platform:x64', '/optimize+', '/utf8output', `/out:${oneFile}`, `/win32icon:${icon}`,
+  `/win32manifest:${join(root, 'apps/desktop/windows/app.manifest')}`,
+  '/reference:System.dll', '/reference:System.Core.dll', '/reference:System.Drawing.dll', '/reference:System.Windows.Forms.dll',
+  '/reference:System.IO.Compression.dll', '/reference:System.IO.Compression.FileSystem.dll',
+  `/embedresource:${zip},dubvibe_mini.resources.zip`,
+  join(cache, 'selfextract-source.cs'),
+])
+await writeFile(oneFile + '.sha256', `${await sha256(oneFile)}  ${basename(oneFile)}\n`)
+console.log(`Built ${oneFile}`)
