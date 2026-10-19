@@ -128,8 +128,7 @@ $archive = [IO.Compression.ZipFile]::Open($env:YOUDUB_ZIP, [IO.Compression.ZipAr
 $skipped = @()
 try {
   foreach ($file in $files) {
-    $name = $base + '/' + $file.Substring($root.Length + 1)
-    $name = $name -replace '\\', '/'
+    $name = ($base + '/' + $file.Substring($root.Length + 1)).Replace('\\', '/')
     $copied = $false
     for ($attempt = 1; $attempt -le 3; $attempt++) {
       try {
