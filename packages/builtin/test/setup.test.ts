@@ -208,7 +208,6 @@ test('skipping required models boots the workspace, persists the choice, and sta
     await writeFile(target, Buffer.alloc(file.size ?? 16))
   })
   const created: string[] = []
-  const trace = (step: string) => { void appendFile(join(tmpdir(), 'dubvibe-skip-trace.log'), `${step}\n`).catch(() => {}); t.diagnostic(`step: ${step}`) }
   const plugin = (label: string) => async function(owner: any) {
     owner.reflect.provide('process', { run: async ({ args }: { args: string[] }) => ({ stderr: '', stdout: args[1] === 'backend.workers.setup_probe' ? JSON.stringify(probeResult(args[2]!)) : args.includes('-filters') ? ' ... subtitles ... ' : '3.12.12\n' }) })
     owner.reflect.provide('loader', { create: async (entry: any) => { created.push(label + ':' + entry.id) }, await: async () => {}, *entries() {} })

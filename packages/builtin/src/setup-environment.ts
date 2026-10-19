@@ -146,12 +146,29 @@ export class EnvironmentSetup {
     const plan = this.accelerationPlan = await this.probe('acceleration-plan')
     this.steps.find(step => step.id === 'acceleration')!.detail = plan.detail
     if (!plan.installed) {
-      if (plan.prerequisites.length) await this.python(['-m', 'pip', 'install', '--disable-pip-version-check', ...plan.prerequisites])
-      await this.python(['-m', 'pip', 'install', '--disable-pip-version-check', '--prefer-binary', '--index-url', plan.index,
-        ...(plan.packages.length ? plan.packages : [`torch==${plan.version}`, `torchaudio==${plan.version}`])])
+      if (plan.prerequisites.length) await this.pipInstall([...plan.prerequisites], detail => { this.steps.find(step => step.id === 'acceleration')!.detail = `${plan.detail}; ${detail}` })
+      await this.pipInstall(['--prefer-binary', '--index-url', plan.index, ...(plan.packages.length ? plan.packages : [`torch==${plan.version}`, `torchaudio==${plan.version}`])], detail => { this.steps.find(step => step.id === 'acceleration')!.detail = `${plan.detail}; ${detail}` })
     }
     const status = await this.probe('acceleration')
     return status.backend === plan.backend ? status.detail : `${plan.detail}; ${status.detail}`
+  }
+  // Network hiccups (broken reads, resets, timeouts) are the most common
+  // first-run failure on flaky links: retry each mirror a few times with
+  // backoff before surfacing the error. Non-transient errors rethrow at once.
+  private async pipInstall(args: string[], onDetail?: (detail: string) => void) {
+    const transient = /Connection broken|IncompleteRead|Connection reset|ConnectionError|ReadTimeoutError|ConnectTimeoutError|timed out|ProtocolError|ChunkedEncodingError|SSLError/
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        await this.python(['-m', 'pip', 'install', '--disable-pip-version-check', '--retries', '8', '--timeout', '60', ...args])
+        return
+      } catch (error) {
+        const text = error instanceof Error ? error.message : String(error)
+        if (!transient.test(text) || attempt === 2) throw error
+        this.ctx.logger.warn(`pip hit a network interruption; retrying (${attempt + 2}/3): ${text}`)
+        onDetail?.(`network interruption; retrying (${attempt + 2}/3)`)
+        await new Promise(resolve => setTimeout(resolve, 3000 * (attempt + 1)))
+      }
+    }
   }
   private async dependencies() {
     const { missing } = await this.probe('dependencies')
@@ -160,16 +177,23 @@ export class EnvironmentSetup {
       const constraints = join(this.config.root, 'runtime', 'torch-constraints.txt')
       await mkdir(dirname(constraints), { recursive: true })
       await writeFile(constraints, `torch==${plan.version}\ntorchaudio==${plan.version}\ntorchcodec==${plan.codec}\n`)
-      const args = ['-m', 'pip', 'install', '--disable-pip-version-check', '--prefer-binary', '--index-url', 'https://mirrors.aliyun.com/pypi/simple/', '-c', constraints, '-r', join(this.config.repoRoot, 'requirements.txt')]
-      try { await this.python(args) }
-      catch (error) {
-        const message = error instanceof Error ? error.message : String(error)
-        if (!/No matching distribution found|Could not find a version that satisfies/.test(message)) throw error
-        // Only a missing mirror package permits this explicit, recorded mirror change.
-        this.ctx.logger.warn(message)
-        this.steps.find(step => step.id === 'dependencies')!.detail = 'Aliyun mirror lacks the dependencies; switching to the Tsinghua mirror'
-        args[args.indexOf('https://mirrors.aliyun.com/pypi/simple/')] = 'https://pypi.tuna.tsinghua.edu.cn/simple/'
-        await this.python(args)
+      const mirror = /No matching distribution found|Could not find a version that satisfies/
+      // Aliyun first, Tsinghua only as a fallback; every attempt reuses the
+      // retry-with-backoff behaviour above. A non-transient dead end rethrows.
+      const mirrors = ['https://mirrors.aliyun.com/pypi/simple/', 'https://pypi.tuna.tsinghua.edu.cn/simple/']
+      for (let index = 0; index < mirrors.length; index++) {
+        const args = ['--prefer-binary', '--index-url', mirrors[index]!, '-c', constraints, '-r', join(this.config.repoRoot, 'requirements.txt')]
+        try {
+          await this.pipInstall(args, detail => { this.steps.find(step => step.id === 'dependencies')!.detail = detail })
+          break
+        } catch (error) {
+          const text = error instanceof Error ? error.message : String(error)
+          if (index === mirrors.length - 1) throw error
+          // Only a missing mirror package or a failing mirror permits the
+          // explicit, recorded mirror switch.
+          this.ctx.logger.warn(text)
+          this.steps.find(step => step.id === 'dependencies')!.detail = mirror.test(text) ? 'Aliyun mirror lacks the dependencies; switching to the Tsinghua mirror' : 'Aliyun mirror is unreachable; switching to the Tsinghua mirror'
+        }
       }
       const remaining = (await this.probe('dependencies')).missing
       if (remaining.length) throw new Error(`Dependencies are still unsatisfied after installation: ${remaining.join(', ')}`)
