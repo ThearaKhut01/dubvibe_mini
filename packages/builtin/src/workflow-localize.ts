@@ -37,7 +37,9 @@ export async function apply(ctx: Context, plugin: { integrity: string; version?:
     const model = provider?.models?.[0]
     return provider && model ? { adapter: provider.adapter ?? provider.id, model: model.id, device: model.devices[0] } : null
   }
-  const defaults = () => settings.defaults ?? { source_language: 'auto', target_language: 'zh', output_mode: 'subtitles', keep_background: false, asr: first('asr'), translation: first('translation'), tts: null, separation: null, subtitle_alignment: null }
+  // Khmer is the product's default target language for fresh installations;
+  // this legacy fallback was silent Chinese and overrode the UI default.
+  const defaults = () => settings.defaults ?? { source_language: 'auto', target_language: 'km', output_mode: 'subtitles', keep_background: false, asr: first('asr'), translation: first('translation'), tts: null, separation: null, subtitle_alignment: null }
   const pick = (kind: string, config: JsonObject, catalog: CatalogService) => catalog.listProviders().find(item => item.capability === kind && (item.adapter ?? item.id) === config[kind]?.adapter)
   const workflow: WorkflowDefinition = {
     id: 'youdub.localize', version, pluginId, pluginVersion: version, integrity: plugin.integrity,
