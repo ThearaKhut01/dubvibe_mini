@@ -185,6 +185,15 @@ export function useI18n() {
   return context
 }
 
+// The persisted interface language, readable outside React where hooks are
+// not available (task-config defaults, first-run setup payloads).
+export function uiLanguage(): UiLanguage {
+  try {
+    const value = window.localStorage.getItem(STORAGE_KEY)
+    return isLanguage(value) ? value : "en"
+  } catch { return "en" }
+}
+
 export function useText() {
   const { language } = useI18n()
   return useCallback((en: string, _unused?: string, km?: string) => (

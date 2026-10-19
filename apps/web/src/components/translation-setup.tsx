@@ -6,6 +6,7 @@ import { BrandMark } from './brand/brand-mark'
 import { Button } from './ui/button'
 import { Input } from './ui/input'
 import { Label } from './ui/label'
+import { uiLanguage } from '@/lib/i18n'
 import type { Runtime, TaskConfig } from '@/plugin/builtin/localize-contracts'
 
 type Settings = { connections: { adapter: string; base_url: string; has_api_key: boolean }[]; defaults?: TaskConfig | null; plugins?: Record<string, { translationDeferred?: boolean }> }
@@ -74,7 +75,7 @@ export function TranslationSetup({ children }: { children: ReactNode }) {
       if (!provider || !asr) throw new Error('The speech recognition model is not ready yet. Finish environment setup first.')
       await mutate('/api/v2/settings', { connection: { adapter: providerId, base_url: url.trim(), ...(key.trim() ? { api_key: key.trim() } : {}) } })
       setKey('')
-      await mutate('/api/v2/settings', { defaults: { source_language: 'auto', target_language: 'zh', output_mode: 'subtitles', keep_background: false,
+      await mutate('/api/v2/settings', { defaults: { source_language: 'auto', target_language: ['en', 'zh', 'ja', 'km'].includes(uiLanguage()) ? uiLanguage() : 'en', output_mode: 'subtitles', keep_background: false,
         asr: { adapter: provider.adapter, model: asr.id, device: asr.devices[0] }, tts: null, separation: null,
         ...settings?.defaults, translation: { adapter: providerId, model: model.trim(), device: 'remote' } } })
       setReady(true)

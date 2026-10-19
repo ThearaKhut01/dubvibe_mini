@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/u
 import { Switch } from "@/components/ui/switch"
 import { cn } from "@/lib/utils"
 import type { Capability, ModelCapability, ModelSelection, Runtime, TaskConfig, TtsSelection } from "@/plugin/builtin/localize-contracts"
-import { useText, type Text } from "@/lib/i18n"
+import { useText, uiLanguage, type Text } from "@/lib/i18n"
 
 const OUTPUT_LABELS: Record<TaskConfig["output_mode"], [string, string, string?]> = {
   subtitles: ["Subtitles · original audio", "Subtitles · original audio", "ចំណងជើង · សំឡេងដើម"],
@@ -95,9 +95,19 @@ function updateConfig(config: TaskConfig, patch: Partial<TaskConfig>, runtime: R
   return normalize({ ...config, ...patch }, runtime)
 }
 
+const SUPPORTED_TARGETS = new Set(Object.keys(LANGUAGE_NAMES))
+
+// The friendliest default target language is the interface language when the
+// pipeline supports it (Khmer UI → Khmer…); English UI falls back to English.
+// Chinese remains supported but is no longer the silent default.
+function defaultTargetLanguage() {
+  const language = uiLanguage()
+  return SUPPORTED_TARGETS.has(language) ? language : "en"
+}
+
 export function initialTaskConfig(runtime: Runtime, defaults?: Partial<TaskConfig> | null): TaskConfig {
   return {
-    source_language: "auto", target_language: "zh", output_mode: "subtitles", keep_background: false,
+    source_language: "auto", target_language: defaultTargetLanguage(), output_mode: "subtitles", keep_background: false,
     tts: null, separation: null, subtitle_alignment: null,
     ...defaults,
     asr: defaults?.asr ?? firstSelection(runtime, "asr"),
@@ -123,24 +133,27 @@ export function TaskOptions({ value, runtime, onChange }: {
     onChange(normalize(next, runtime))
   }
   const fields = [
-    { id: "output-mode", label: text("Output", "输出", "\u179B\u1791\u17D2\u1792\u1795\u179B"), aria: text("Output content", "输出内容", "\u1781\u17D2\u179B\u17B9\u1798\u179F\u17B6\u179A\u179B\u1791\u17D2\u1792\u1795\u179B"), value: value.output_mode,
+    { id: "output-mode", label: text("Output", "输出", "\u179B\u1791\u17D2\u1792\u1795\u179B"), aria: text("Output content", "输出内容", "\u1781\u17D2\u179B\u17B9\u1798\u179F\u17B6\u179A\u179B\u1791\u17D2\u1792\u1795\u179B"), value: value.output_mode, hint: "",
       display: text(...OUTPUT_LABELS[value.output_mode]), options: Object.entries(OUTPUT_LABELS).map(([mode, label]) => ({ value: mode, label: text(...label) })),
       change: (mode: string) => change({ output_mode: mode as TaskConfig["output_mode"] }) },
-    { id: "source-language", label: text("From", "原文", "\u1794\u17D2\u179A\u1797\u1796"), aria: text("Source language", "原文语言", "\u1797\u17B6\u179F\u17B6\u1794\u17D2\u179A\u1797\u1796"), value: value.source_language,
+    { id: "source-language", label: text("From", "原文", "\u1794\u17D2\u179A\u1797\u1796"), aria: text("Source language", "原文语言", "\u1797\u17B6\u179F\u17B6\u1794\u17D2\u179A\u1797\u1796"), value: value.source_language, hint: "",
       display: languageName(value.source_language, text), options: sources.map((code) => ({ value: code, label: languageName(code, text) })),
       change: (source_language: string) => change({ source_language }) },
     { id: "target-language", label: text("To", "目标", "\u1791\u17C5"), aria: text("Target language", "目标语言", "\u1797\u17B6\u179F\u17B6\u1782\u17C4\u179B\u178A\u17C5"), value: value.target_language,
       display: languageName(value.target_language, text), options: targets.map((code) => ({ value: code, label: languageName(code, text) })),
-      change: (target_language: string) => change({ target_language }) },
+      change: (target_language: string) => change({ target_language }),
+      // With no translation provider configured the list would be empty and the
+      // stale default value would look like the only possibility — say why.
+      hint: targets.length === 0 ? text("Connect a translation provider in Settings first.", "请先在设置中连接翻译服务。", "សូមតភ្ជាប់ក្រុមហ៊ុնផ្ដល់សេវាបកប្រែនៅក្នុងការកំណត់ជាដំបូង។") : "" },
   ]
   return <div className="flex flex-wrap items-center gap-2">{fields.map((field) => (
     <Select key={field.id} value={field.value} onValueChange={(next) => { if (typeof next === "string") field.change(next) }}>
-      <SelectTrigger id={field.id} aria-label={field.aria} className="inline-flex h-8 w-auto max-w-full gap-1.5 rounded-full border-border bg-muted px-3 text-[13px] shadow-none hover:bg-accent">
-        <span className="text-subtle-foreground">{field.label}</span><span className="min-w-0 truncate font-medium">{field.display}</span>
+      <SelectTrigger id={field.id} aria-label={field.aria} className="inline-flex h-8 w-auto max-w-full gap-1.5 rounded-full border-border bg-muted px-3 text-[13px] shadow-none hover:bg-accent" title={field.hint || undefined}>
+        <span className="text-subtle-foreground">{field.label}</span>{field.hint && <span aria-hidden className="h-2 w-2 rounded-full bg-status-warning-fg" />}<span className="min-w-0 truncate font-medium">{field.display}</span>
       </SelectTrigger>
       <SelectContent>{field.options.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
     </Select>
-  ))}</div>
+  ))}{fields.some((field) => field.hint) && <p className="text-xs text-status-warning-fg">{fields.find((field) => field.hint)!.hint}</p>}</div>
 }
 
 const ADAPTER_NAMES: Record<string, [string, string, string?]> = {
