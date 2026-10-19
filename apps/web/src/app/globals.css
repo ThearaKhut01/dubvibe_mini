@@ -349,6 +349,8 @@
 }
 
 /* MagicMouse.js cursor colour follows the theme (red in light mode, white in dark mode). */
+/* The dot has no z-index in the vendored stylesheet, so layered surfaces painted it over; match the ring's level. */
+html body #magicPointer { z-index: 9999; }
 html body #magicMouseCursor { border: 1px solid var(--magic-cursor); }
 html body #magicPointer { border-color: var(--magic-cursor); }
 html body #magicPointer { background: var(--magic-cursor); }
