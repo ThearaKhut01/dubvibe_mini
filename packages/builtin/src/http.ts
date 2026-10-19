@@ -105,7 +105,7 @@ export default class HttpService extends Service {
     const next = async () => {
       const middleware = this.middleware[index++]
       if (middleware) { await middleware(request, next); return }
-      if (!match) throw new AppError('NOT_FOUND', 'Route not found.', 404)
+      if (!match) throw new AppError('NOT_FOUND', `Route not found: ${raw.method} ${request.url.pathname}`, 404)
       await match.route.handler(request)
     }
     await next()
