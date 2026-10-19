@@ -120,15 +120,16 @@ $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 if (Test-Path -LiteralPath $env:YOUDUB_ZIP) { Remove-Item -LiteralPath $env:YOUDUB_ZIP }
+$sep = [string][char]92
 $root = $env:YOUDUB_BUNDLE
-$base = if ($root.EndsWith('\')) { $root.Substring(0, $root.Length - 1) } else { $root }
+$base = if ($root.EndsWith($sep)) { $root.Substring(0, $root.Length - 1) } else { $root }
 $base = [IO.Path]::GetFileName($base)
 $files = [System.Collections.Generic.List[string]](Get-ChildItem -LiteralPath $root -Recurse -File -Force | ForEach-Object { $_.FullName })
 $archive = [IO.Compression.ZipFile]::Open($env:YOUDUB_ZIP, [IO.Compression.ZipArchiveMode]::Create)
 $skipped = @()
 try {
   foreach ($file in $files) {
-    $name = ($base + '/' + $file.Substring($root.Length + 1)).Replace('\\', '/')
+    $name = ($base + '/' + $file.Substring($root.Length + 1)).Replace($sep, '/')
     $copied = $false
     for ($attempt = 1; $attempt -le 3; $attempt++) {
       try {
@@ -172,3 +173,27 @@ run(join(process.env.SystemRoot || 'C:/Windows', 'Microsoft.NET/Framework64/v4.0
 ])
 await writeFile(oneFile + '.sha256', `${await sha256(oneFile)}  ${basename(oneFile)}\n`)
 console.log(`Built ${oneFile}`)
+// Per-user setup installer: same ZIP, with shortcuts and an HKCU
+// "Apps & features" uninstall entry. %LOCALAPPDATA%\Programs\dubvibe_mini.
+const setupFile = join(root, `dist/dubvibe_mini-${appVersion}-windows-x64-setup.exe`)
+const setupStamp = createHash('sha256').update(await readFile(zip)).digest('hex').slice(0, 16)
+await writeFile(join(cache, 'uninstaller-source.cs'), await readFile(join(root, 'apps/desktop/windows/uninstaller.cs'), 'utf8'), 'utf8')
+const uninstallExe = join(cache, 'uninstall.exe')
+const compilerExe = join(process.env.SystemRoot || 'C:/Windows', 'Microsoft.NET/Framework64/v4.0.30319/csc.exe')
+run(compilerExe, [
+  '/nologo', '/target:winexe', '/platform:x64', '/optimize+', '/utf8output', `/out:${uninstallExe}`,
+  '/reference:System.dll', '/reference:System.Core.dll', '/reference:System.Windows.Forms.dll',
+  join(cache, 'uninstaller-source.cs'),
+])
+await writeFile(join(cache, 'installer-source.cs'), (await readFile(join(root, 'apps/desktop/windows/installer.cs'), 'utf8'))
+  .replace('__STAMP__', setupStamp).replace('__VERSION__', appVersion), 'utf8')
+run(compilerExe, [
+  '/nologo', '/target:winexe', '/platform:x64', '/optimize+', '/utf8output', `/out:${setupFile}`, `/win32icon:${icon}`,
+  `/win32manifest:${join(root, 'apps/desktop/windows/app.manifest')}`,
+  '/reference:System.dll', '/reference:System.Core.dll', '/reference:System.Drawing.dll', '/reference:System.Windows.Forms.dll',
+  '/reference:Microsoft.CSharp.dll', '/reference:System.IO.Compression.dll', '/reference:System.IO.Compression.FileSystem.dll',
+  `/resource:${zip},dubvibe_mini.resources.zip`, `/resource:${uninstallExe},dubvibe_mini.uninstall.exe`,
+  join(cache, 'installer-source.cs'),
+])
+await writeFile(setupFile + '.sha256', `${await sha256(setupFile)}  ${basename(setupFile)}\n`)
+console.log(`Built ${setupFile}`)
