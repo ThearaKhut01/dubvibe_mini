@@ -121,12 +121,14 @@ Add-Type -AssemblyName System.IO.Compression
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 if (Test-Path -LiteralPath $env:YOUDUB_ZIP) { Remove-Item -LiteralPath $env:YOUDUB_ZIP }
 $root = $env:YOUDUB_BUNDLE
+$base = if ($root.EndsWith('\')) { $root.Substring(0, $root.Length - 1) } else { $root }
+$base = [IO.Path]::GetFileName($base)
 $files = [System.Collections.Generic.List[string]](Get-ChildItem -LiteralPath $root -Recurse -File -Force | ForEach-Object { $_.FullName })
 $archive = [IO.Compression.ZipFile]::Open($env:YOUDUB_ZIP, [IO.Compression.ZipArchiveMode]::Create)
 $skipped = @()
 try {
   foreach ($file in $files) {
-    $name = $file.Substring($root.Length + 1)
+    $name = $base + '/' + $file.Substring($root.Length + 1)
     while ($name.Contains('\\')) { $name = $name.Replace('\\', '/') }
     $copied = $false
     for ($attempt = 1; $attempt -le 3; $attempt++) {
@@ -144,6 +146,8 @@ if ($skipped.Count -gt 0) { throw ('Files missing while zipping: ' + ($skipped -
 $verify = [IO.Compression.ZipFile]::OpenRead($env:YOUDUB_ZIP)
 try {
   if ($verify.Entries.Count -ne $files.Count) { throw ('Archive mismatch: ' + $verify.Entries.Count + ' entries for ' + $files.Count + ' files.') }
+  $key = $verify.Entries | Where-Object { $_.FullName -eq ($base + '/resources/build.json') }
+  if (-not $key) { throw ('Archive layout wrong: missing ' + $base + '/resources/build.json') }
   Write-Output ('zipped ' + $files.Count + ' files')
 } finally { $verify.Dispose() }
 `.trim()
