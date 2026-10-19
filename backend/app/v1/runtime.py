@@ -86,17 +86,20 @@ def _whisper_models(devices: list[dict[str, Any]]) -> tuple[list[dict[str, Any]]
 
 
 # OpenAI-compatible remote translation adapters. Gemini exposes an OpenAI-compatible endpoint,
-# so it uses the same client with its own base_url and key.
-TRANSLATION_ADAPTERS = ("openai", "gemini")
+# so it uses the same client with its own base_url and key; `custom` is any other
+# OpenAI-compatible service (OpenRouter, OneAPI, LM Studio, self-hosted gateways…).
+TRANSLATION_ADAPTERS = ("openai", "gemini", "custom")
 
 
 def _translation_models(
-    connections: Sequence[Mapping[str, Any]], translation_model: str | None,
+    connections: Sequence[Mapping[str, Any]], translation_model: str | None, adapter: str,
 ) -> tuple[list[dict[str, Any]], str | None]:
     if importlib.util.find_spec("openai") is None:
         return [], "OpenAI-compatible translation requires the openai SDK."
     from .contracts import _valid_base_url
-    connection = next((item for item in connections if item["adapter"] in TRANSLATION_ADAPTERS), None)
+    # Availability is judged per probed adapter: the openai probe must not
+    # report a gemini connection ready, and vice versa.
+    connection = next((item for item in connections if item["adapter"] == adapter), None)
     if connection is None:
         return [], "Provider connection is not configured."
     try:
@@ -263,11 +266,11 @@ def runtime_info() -> dict[str, Any]:
 def probe_capability(adapter: str, *, connections: Sequence[Mapping[str, Any]] = (),
                      translation_model: str | None = None) -> dict[str, Any]:
     """Inspect exactly one installed provider; no inference or network access."""
-    remote_kinds = {"openai": "translation", "gemini": "translation", "edge": "tts"}
+    remote_kinds = {"openai": "translation", "gemini": "translation", "custom": "translation", "edge": "tts"}
     kind = remote_kinds.get(adapter)
     execution = "remote" if adapter in remote_kinds else "local"
     if kind == "translation":
-        models, reason = _translation_models(connections, translation_model)
+        models, reason = _translation_models(connections, translation_model, adapter)
     elif kind == "tts":
         models, reason = _edge_models(_detect_devices())
     else:

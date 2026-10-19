@@ -49,6 +49,20 @@ def test_saved_key_can_be_tested_without_returning_it(bridge, monkeypatch):
     bridge.credentials.set.assert_not_called()
 
 
+def test_saved_key_from_a_custom_connection_can_be_tested_without_returning_it(bridge, monkeypatch):
+    bridge.store.settings_values = lambda: {'connections': [{'adapter': 'custom', 'base_url': 'https://gateway.example/v1', 'credential_ref': 'ref'}]}
+    bridge.credentials.get.return_value = 'saved-secret'
+    client = Mock()
+    client.__enter__ = Mock(return_value=client)
+    client.__exit__ = Mock(return_value=False)
+    client.chat.completions.create.return_value = NS(choices=[NS(message=NS(content='OK'))])
+    factory = Mock(return_value=client)
+    monkeypatch.setattr(openai, 'OpenAI', factory)
+    assert check_connection({'base_url': 'https://gateway.example/v1', 'model': 'test'}, bridge) == {'ok': True}
+    assert factory.call_args.kwargs['api_key'] == 'saved-secret'
+    bridge.credentials.set.assert_not_called()
+
+
 def test_invalid_output_limit_stops_before_call(bridge, monkeypatch):
     monkeypatch.setattr('backend.app.v1.connection_test.MAX_COMPLETION_TOKENS', 128)
     monkeypatch.setattr(openai, 'OpenAI', lambda **kwargs: pytest.fail('must not contact provider'))

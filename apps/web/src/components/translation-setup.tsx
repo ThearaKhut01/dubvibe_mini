@@ -9,6 +9,11 @@ import { Label } from './ui/label'
 import type { Runtime, TaskConfig } from '@/plugin/builtin/localize-contracts'
 
 type Settings = { connections: { adapter: string; base_url: string; has_api_key: boolean }[]; defaults?: TaskConfig | null; plugins?: Record<string, { translationDeferred?: boolean }> }
+const PROVIDERS: { id: string; label: string; url: string }[] = [
+  { id: 'openai', label: 'OpenAI', url: 'https://api.openai.com/v1' },
+  { id: 'gemini', label: 'Google Gemini', url: 'https://generativelanguage.googleapis.com/v1beta/openai/' },
+  { id: 'custom', label: 'Custom API', url: '' },
+]
 async function api(path: string, init?: RequestInit) {
   const response = await fetch(path, { ...init, credentials: 'same-origin', cache: 'no-store' })
   const body = await response.json()
@@ -19,7 +24,8 @@ async function api(path: string, init?: RequestInit) {
 export function TranslationSetup({ children }: { children: ReactNode }) {
   const [settings, setSettings] = useState<Settings | null>(null)
   const [csrf, setCsrf] = useState('')
-  const [url, setUrl] = useState('https://api.openai.com/v1')
+  const [providerId, setProviderId] = useState('openai')
+  const [url, setUrl] = useState(PROVIDERS[0]!.url)
   const [model, setModel] = useState('')
   const [key, setKey] = useState('')
   const [ready, setReady] = useState(false)
@@ -35,11 +41,20 @@ export function TranslationSetup({ children }: { children: ReactNode }) {
         const current: Settings = await api('/api/v2/settings', { signal: controller.signal })
         if (stopped) return
         setCsrf(session.csrf_token); setSettings(current)
-        const connection = current.connections.find(item => item.adapter === 'openai')
-        if (connection) setUrl(connection.base_url)
+        const adapters = PROVIDERS.map(item => item.id)
+        // Resume the card the user has (or had) a key for; otherwise keep the default.
+        const connection = current.connections.filter(item => adapters.includes(item.adapter)).find(item => item.has_api_key)
+        if (connection) {
+          setProviderId(connection.adapter)
+          setUrl(connection.base_url)
+        } else {
+          const savedProvider = current.defaults?.translation?.adapter
+          const preset = savedProvider && adapters.includes(savedProvider) ? PROVIDERS.find(item => item.id === savedProvider) : undefined
+          if (preset) { setProviderId(preset.id); setUrl(preset.url) }
+        }
         const savedModel = current.defaults?.translation?.model
         if (savedModel) setModel(savedModel)
-        setReady(Boolean(connection?.has_api_key && savedModel) || current.plugins?.['youdub.onboarding']?.translationDeferred === true)
+        setReady(Boolean(connection && savedModel) || current.plugins?.['youdub.onboarding']?.translationDeferred === true)
       } catch (failure) { if (!stopped) setError(failure instanceof Error ? failure.message : String(failure)) }
     })()
     return () => { stopped = true; controller.abort() }
@@ -57,11 +72,11 @@ export function TranslationSetup({ children }: { children: ReactNode }) {
       const provider = runtime.capabilities.find(item => item.capability === 'asr' && item.available)
       const asr = provider?.models[0]
       if (!provider || !asr) throw new Error('The speech recognition model is not ready yet. Finish environment setup first.')
-      await mutate('/api/v2/settings', { connection: { adapter: 'openai', base_url: url.trim(), ...(key.trim() ? { api_key: key.trim() } : {}) } })
+      await mutate('/api/v2/settings', { connection: { adapter: providerId, base_url: url.trim(), ...(key.trim() ? { api_key: key.trim() } : {}) } })
       setKey('')
       await mutate('/api/v2/settings', { defaults: { source_language: 'auto', target_language: 'zh', output_mode: 'subtitles', keep_background: false,
         asr: { adapter: provider.adapter, model: asr.id, device: asr.devices[0] }, tts: null, separation: null,
-        ...settings?.defaults, translation: { adapter: 'openai', model: model.trim(), device: 'remote' } } })
+        ...settings?.defaults, translation: { adapter: providerId, model: model.trim(), device: 'remote' } } })
       setReady(true)
     } catch (failure) { setError(failure instanceof Error ? failure.message : String(failure)) }
     finally { setBusy(false) }
@@ -74,12 +89,24 @@ export function TranslationSetup({ children }: { children: ReactNode }) {
   }
   if (ready) return children
   if (!settings) return <main className="mx-auto max-w-xl space-y-4 p-8">{error ? <><p role="alert">{error}</p><Button onClick={() => { setError(''); setAttempt(value => value + 1) }}>Reconnect</Button></> : <p role="status">Checking the translation service setup…</p>}</main>
-  const savedKey = settings.connections.some(item => item.adapter === 'openai' && item.base_url === url.trim() && item.has_api_key)
+  const savedKey = settings.connections.some(item => item.adapter === providerId && item.base_url === url.trim() && item.has_api_key)
   return <main className="mx-auto max-w-xl space-y-6 px-6 py-12">
     <BrandMark wordmark className="h-7" />
-    <div className="space-y-2"><p className="text-xs text-muted-foreground">Environment and models are ready · last step</p><h1 className="text-xl font-semibold">Configure the translation service</h1><p className="text-sm text-muted-foreground">Enter an OpenAI-compatible endpoint. Translation sends the recognized subtitle text to this service; testing the connection sends one short test sentence.</p></div>
+    <div className="space-y-2"><p className="text-xs text-muted-foreground">Environment and models are ready · last step</p><h1 className="text-xl font-semibold">Configure the translation service</h1><p className="text-sm text-muted-foreground">Pick a provider, enter its API key, then test the connection. Translation sends the recognized subtitle text to this service; the test sends one short test sentence.</p></div>
     <form className="space-y-5 rounded-2xl border border-border bg-card p-6" onSubmit={save}>
-      <div className="space-y-2"><Label htmlFor="setup-llm-url">Endpoint URL</Label><Input id="setup-llm-url" type="url" value={url} disabled={busy} onChange={event => setUrl(event.target.value)} required /></div>
+      <div className="space-y-2">
+        <Label>Provider</Label>
+        <div role="radiogroup" aria-label="Provider" className="grid gap-2 sm:grid-cols-3">
+          {PROVIDERS.map(provider => (
+            <label key={provider.id} className={`cursor-pointer rounded-lg border px-3 py-2 text-sm transition-colors ${providerId === provider.id ? 'border-primary bg-primary/5 font-medium' : 'border-border text-muted-foreground hover:border-muted-foreground'}`}>
+              <input type="radio" name="provider" value={provider.id} className="sr-only" checked={providerId === provider.id} disabled={busy} onChange={() => { setProviderId(provider.id); setUrl(provider.url) }} />
+              {provider.label}
+            </label>
+          ))}
+        </div>
+        {providerId === 'custom' && <p className="text-xs text-muted-foreground">Any OpenAI-compatible service: OpenRouter, OneAPI, LM Studio, or your own gateway.</p>}
+      </div>
+      <div className="space-y-2"><Label htmlFor="setup-llm-url">Endpoint URL</Label><Input id="setup-llm-url" type="url" value={url} disabled={busy} placeholder={providerId === 'custom' ? 'https://your-service.example/v1' : undefined} onChange={event => setUrl(event.target.value)} required /></div>
       <div className="space-y-2"><Label htmlFor="setup-llm-model">Model name</Label><Input id="setup-llm-model" value={model} disabled={busy} onChange={event => setModel(event.target.value)} placeholder="For example gpt-4.1-mini" required /></div>
       <div className="space-y-2"><Label htmlFor="setup-llm-key">API key{savedKey ? ' · Saved' : ''}</Label><Input id="setup-llm-key" type="password" autoComplete="new-password" value={key} disabled={busy} onChange={event => setKey(event.target.value)} required={!savedKey} placeholder={savedKey ? 'Leave blank to keep the saved key' : ''} /><p className="text-xs text-muted-foreground">The key is stored in the system credential manager and can be changed in Settings.</p></div>
       {error && <p role="alert" className="text-sm text-status-danger-fg">{error}</p>}

@@ -30,8 +30,9 @@ def check_connection(payload: dict, bridge) -> dict:
     model = (config.model or default_model()).strip()
     key = config.api_key.get_secret_value().strip() if config.api_key else ''
     if not key:
+        from .runtime import TRANSLATION_ADAPTERS
         current = next((item for item in bridge.store.settings_values().get('connections', [])
-                        if item['adapter'] == 'openai' and item['base_url'] == config.base_url), None)
+                        if item['adapter'] in TRANSLATION_ADAPTERS and item['base_url'] == config.base_url), None)
         key = bridge.credentials.get(current['credential_ref']) if current and current.get('credential_ref') else None
     if not key:
         raise WorkerError('INVALID_CONFIG', 'Enter an API key; no saved key exists for this base URL.')

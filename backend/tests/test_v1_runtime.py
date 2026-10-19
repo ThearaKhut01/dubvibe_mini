@@ -141,6 +141,21 @@ def test_translation_models_use_configured_candidates_and_preserve_saved_default
     assert "DUBVIBE_MINI_TRANSLATION_MODELS" in capability["unavailable_reason"]
 
 
+def test_custom_remote_adapter_matches_only_its_own_connection(installed_runtime, monkeypatch):
+    connections = [
+        {"adapter": "gemini", "base_url": "https://gemini.example/v1beta/openai/", "has_api_key": True},
+        {"adapter": "custom", "base_url": "https://gateway.example/v1", "has_api_key": True},
+    ]
+    for adapter in ("gemini", "custom"):
+        result = runtime.probe_capability(adapter, connections=connections)
+        assert result["available"] and result["execution"] == "remote" and result["requires_api_key"] is True
+        assert result["data_sent"] == ["text"]
+        assert [item["id"] for item in result["models"]] == ["gpt-4.1-mini"]
+    # An adapter's readiness must never borrow another adapter's connection.
+    result = runtime.probe_capability("openai", connections=connections)
+    assert not result["available"] and result["unavailable_reason"] == "Provider connection is not configured."
+
+
 @pytest.mark.parametrize("missing", ["whisper", "torch", "nltk", "ffmpeg", "ffprobe", "checkpoint"])
 def test_whisper_is_unavailable_when_a_real_local_prerequisite_is_missing(installed_runtime, monkeypatch, tmp_path, missing):
     if missing in {"whisper", "torch", "nltk"}:
@@ -390,7 +405,7 @@ def test_single_provider_probe_does_not_inspect_unrelated_models(monkeypatch):
 
 def test_remote_probe_does_not_load_torch_or_local_model_metadata(monkeypatch):
     monkeypatch.setattr(runtime, "_detect_devices", lambda: pytest.fail("remote probe must not inspect local devices"))
-    monkeypatch.setattr(runtime, "_translation_models", lambda connections, model: ([], "Remote setup required"))
+    monkeypatch.setattr(runtime, "_translation_models", lambda connections, model, adapter: ([], "Remote setup required"))
     assert runtime.probe_capability("openai")["unavailable_reason"] == "Remote setup required"
 
 
