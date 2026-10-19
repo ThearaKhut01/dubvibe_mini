@@ -203,7 +203,9 @@ console.log(`Built ${zip}`)
 // to %LOCALAPPDATA%\dubvibe_mini\app. The stamp changes per build so updated exes
 // re-unpack over an older extracted tree.
 const stamp = createHash('sha256').update(await readFile(zip)).digest('hex').slice(0, 16)
-await writeFile(join(cache, 'selfextract-source.cs'), (await readFile(join(root, 'apps/desktop/windows/selfextract.cs'), 'utf8')).replace('__STAMP__', stamp), 'utf8')
+const selfextractSource = (await readFile(join(root, 'apps/desktop/windows/selfextract.cs'), 'utf8')).replaceAll('__STAMP__', stamp)
+if (selfextractSource.includes('__STAMP__')) throw new Error('Self-extractor template placeholders were not substituted')
+await writeFile(join(cache, 'selfextract-source.cs'), selfextractSource, 'utf8')
 const oneFile = join(root, `dist/dubvibe_mini-${appVersion}-windows-x64-onefile.exe`)
 run(join(process.env.SystemRoot || 'C:/Windows', 'Microsoft.NET/Framework64/v4.0.30319/csc.exe'), [
   '/nologo', '/target:winexe', '/platform:x64', '/optimize+', '/utf8output', `/out:${oneFile}`, `/win32icon:${icon}`,
@@ -227,8 +229,13 @@ run(compilerExe, [
   '/reference:System.dll', '/reference:System.Core.dll', '/reference:System.Windows.Forms.dll',
   join(cache, 'uninstaller-source.cs'),
 ])
-await writeFile(join(cache, 'installer-source.cs'), (await readFile(join(root, 'apps/desktop/windows/installer.cs'), 'utf8'))
-  .replace('__STAMP__', setupStamp).replace('__VERSION__', appVersion), 'utf8')
+// A plain replace() only rewrites the first occurrence — the templates put
+// __STAMP__/__VERSION__ in comments too, and a missed constant once compiled
+// installers that stamped "__STAMP__" and then never upgraded again.
+const installerSource = (await readFile(join(root, 'apps/desktop/windows/installer.cs'), 'utf8'))
+  .replaceAll('__STAMP__', setupStamp).replaceAll('__VERSION__', appVersion)
+if (installerSource.includes('__STAMP__') || installerSource.includes('__VERSION__')) throw new Error('Installer template placeholders were not substituted')
+await writeFile(join(cache, 'installer-source.cs'), installerSource, 'utf8')
 run(compilerExe, [
   '/nologo', '/target:winexe', '/platform:x64', '/optimize+', '/utf8output', `/out:${setupFile}`, `/win32icon:${icon}`,
   `/win32manifest:${join(root, 'apps/desktop/windows/app.manifest')}`,
