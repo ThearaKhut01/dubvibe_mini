@@ -65,10 +65,20 @@ def main():
             print(json.dumps({"ready": False})); return
         print(json.dumps({"ready": all((directory / name).is_file() and (directory / name).stat().st_size > 0 for name in ("collocations.tab", "sent_starters.txt", "abbrev_types.txt", "ortho_context.tab"))}))
     elif action == "verify":
-        # Exercise imports needed by inference, as well as metadata-only model probes.
+        # Exercise imports needed by inference, plus model-free capability probes.
+        # An adapter in skip_adapters was skipped by the user at first run; the
+        # workspace must still boot, probes fail later with a readable error.
+        skip = set()
+        if len(sys.argv) > 2:
+            try:
+                payload = json.loads(sys.argv[2])
+                skip = {name for name in payload.get("skip_adapters", []) if isinstance(name, str)}
+            except (json.JSONDecodeError, AttributeError):
+                skip = set()
         import torch, torchaudio, whisper, voxcpm, transformers, soundfile, librosa
         from backend.app.v1.runtime import probe_capability
-        result = {adapter: probe_capability(adapter) for adapter in ("whisper", "voxcpm", "demucs", "qwen_forced_aligner")}
+        adapters = ("whisper", "voxcpm", "demucs", "qwen_forced_aligner")
+        result = {adapter: probe_capability(adapter) for adapter in adapters if adapter not in skip}
         unavailable = {key: item["unavailable_reason"] for key, item in result.items() if not item["available"]}
         if unavailable:
             raise RuntimeError(json.dumps(unavailable, ensure_ascii=False))

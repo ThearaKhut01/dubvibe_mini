@@ -41,6 +41,6 @@ export default async function composition(): Promise<EntryOptions[]> {
   return [
     entry('process', 'process'),
     entry('http', 'http', { host: readEnv('HOST') || '127.0.0.1', port: Number(readEnv('PORT') || 8000) }),
-    entry('setup', 'setup', { root, repoRoot, python, entries }),
+    entry('setup', 'setup', { root, repoRoot, python, bundle: readEnv('DUBVIBE_MINI_APP_ASSETS'), entries }),
   ]
 }

@@ -1,13 +1,17 @@
 import { readEnv } from './env'
-import { access, chmod, mkdir, readdir, writeFile } from 'node:fs/promises'
+import { access, chmod, copyFile, mkdir, readdir, readFile, writeFile } from 'node:fs/promises'
 import { constants } from 'node:fs'
+import { createHash } from 'node:crypto'
 import { delimiter, dirname, join } from 'node:path'
 import type { Context } from 'cordis'
 import { DownloadClient, fileSize } from './setup-download.js'
 
 export type SetupStage = 'pending' | 'running' | 'ready' | 'failed'
 export interface EnvironmentStep { id: string; name: string; status: SetupStage; detail?: string }
-export interface EnvironmentConfig { root: string; repoRoot: string; python: string }
+export interface EnvironmentConfig { root: string; repoRoot: string; python: string; bundle?: string }
+// Pinned Windows Python 3.12.15 archive (python-build-standalone) shipped in
+// bundles: the same interpreter uv would install, but without its network step.
+const BUNDLED_PYTHON = 'cpython-3.12.15+20261013-x86_64-pc-windows-msvc-install_only_stripped.tar.gz'
 export function platformTarget(platform = process.platform, arch = process.arch) {
   const targets: Record<string, string> = { 'darwin-arm64': 'aarch64-apple-darwin', 'darwin-x64': 'x86_64-apple-darwin', 'linux-arm64': 'aarch64-unknown-linux-gnu', 'linux-x64': 'x86_64-unknown-linux-gnu', 'win32-x64': 'x86_64-pc-windows-msvc' }
   const target = targets[`${platform}-${arch}`]
@@ -38,8 +42,12 @@ export class EnvironmentSetup {
     return this.ctx.process.run({ command, args, cwd: this.config.repoRoot, env, signal: this.signal })
   }
   private python(args: string[]) { return this.run(this.config.python, args) }
-  async probe(action: string) {
-    const result = await this.python(['-m', 'backend.workers.setup_probe', action])
+  async probe(action: string, options?: { skipAdapters?: string[] }) {
+    // skipAdapters relaxes `verify`: model-free capability probes for those
+    // adapters are skipped so a user's "install models later" choice still boots.
+    const args = ['-m', 'backend.workers.setup_probe', action]
+    if (options?.skipAdapters) args.push(JSON.stringify({ skip_adapters: options.skipAdapters }))
+    const result = await this.python(args)
     return JSON.parse(result.stdout.trim())
   }
   private async releaseAsset(repo: string, tag: string, name: string) {
@@ -47,6 +55,44 @@ export class EnvironmentSetup {
     const asset = release.assets?.find((item: any) => item.name === name)
     if (!asset?.digest?.startsWith('sha256:')) throw new Error(`The download manifest is missing its SHA-256 digest: ${repo}/${tag}/${name}`)
     return { path: name, url: asset.browser_download_url as string, size: asset.size as number, sha256: asset.digest.slice(7) as string }
+  }
+  // Offline first-run asset shipped inside the bundle at resources/bootstrap.
+  // Verifies the digest from the build's manifest and degrades to normal
+  // downloads when the folder is missing (dev) or the copy is corrupt.
+  private async bundleAsset(name: string) {
+    const directory = this.config.bundle?.trim()
+    if (!directory) return undefined
+    try {
+      const manifest = JSON.parse(await readFile(join(directory, 'manifest.json'), 'utf8'))
+      const entry = manifest[name]
+      if (!entry) return undefined
+      const path = join(directory, name)
+      const size = await fileSize(path)
+      if (size === undefined) return undefined
+      const sha256 = createHash('sha256').update(await readFile(path)).digest('hex')
+      if (size !== entry.size || sha256 !== entry.sha256) {
+        this.ctx.logger.warn(`Bundled ${name} failed verification; downloading the normal way.`)
+        return undefined
+      }
+      return { path, size: entry.size as number, sha256: entry.sha256 as string }
+    } catch (error: any) {
+      if (error?.code === 'ENOENT') return undefined
+      throw error
+    }
+  }
+  // Bundle first, network second: copies the embedded archive, else the asset.
+  private async stageAsset(name: string, destination: string) {
+    const folder = dirname(destination)
+    await mkdir(folder, { recursive: true })
+    const bundled = await this.bundleAsset(name)
+    if (bundled) { await copyFile(bundled.path, destination); return }
+    const asset = await this.releaseAsset(...this.releaseFor(name))
+    await this.client.download(asset, destination, this.signal, () => {})
+  }
+  private releaseFor(name: string): [repo: string, tag: string, asset: string] {
+    if (name.startsWith('uv-')) return ['astral-sh/uv', '0.13.0', name]
+    if (name.startsWith('ffmpeg-')) return ['BtbN/FFmpeg-Builds', 'latest', name]
+    throw new Error(`No release source for archive ${name}.`)
   }
   private async pythonEnvironment() {
     const environment = dirname(dirname(this.config.python))
@@ -66,9 +112,8 @@ export class EnvironmentSetup {
         const folder = join(this.config.root, 'runtime', 'uv')
         const windows = process.platform === 'win32'
         const name = `uv-${target}.${windows ? 'zip' : 'tar.gz'}`
-        const asset = await this.releaseAsset('astral-sh/uv', '0.13.0', name)
         const archive = join(folder, name)
-        await this.client.download(asset, archive, this.signal, () => {})
+        await this.stageAsset(name, archive)
         if (windows) {
           // Windows tar can lose non-ASCII paths on an English system locale.
           const shell = join(process.env.SystemRoot || 'C:/Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
@@ -78,8 +123,20 @@ export class EnvironmentSetup {
         } else await this.run('tar', ['-xf', archive, '-C', folder])
         const uv = windows ? join(folder, 'uv.exe') : join(folder, `uv-${target}`, 'uv')
         const env = { UV_PYTHON_INSTALL_DIR: join(this.config.root, 'runtime', 'python'), UV_PYTHON_BIN_DIR: join(this.config.root, 'runtime', 'bin'), UV_NO_MODIFY_PATH: '1', UV_INDEX_URL: 'https://mirrors.aliyun.com/pypi/simple/' }
-        await this.run(uv, ['python', 'install', '3.12'], env)
-        await this.run(uv, ['venv', '--python', '3.12', '--seed', environment], env)
+        // Bundled Windows run: skip uv's network Python install entirely by
+        // extracting the pinned python-build-standalone archive ourselves.
+        const bundledPython = windows ? await this.bundleAsset(BUNDLED_PYTHON) : undefined
+        if (bundledPython) {
+          const pythonRoot = join(this.config.root, 'runtime', 'python', 'cpython-3.12.15')
+          const interpreter = join(pythonRoot, 'python', 'python.exe')
+          await mkdir(pythonRoot, { recursive: true })
+          if (!await fileSize(interpreter)) await this.run('tar', ['-xf', bundledPython.path, '-C', pythonRoot])
+          if (!await fileSize(interpreter)) throw new Error(`The bundled Python archive is missing python.exe: ${bundledPython.path}`)
+          await this.run(uv, ['venv', '--seed', '--python', interpreter, environment], env)
+        } else {
+          await this.run(uv, ['python', 'install', '3.12'], env)
+          await this.run(uv, ['venv', '--python', '3.12', '--seed', environment], env)
+        }
       }
     }
     const result = await this.python(['-c', 'import sys; assert sys.version_info[:2] == (3, 12), "Python 3.12 is required"; print(sys.version.split()[0])'])
@@ -142,9 +199,8 @@ export class EnvironmentSetup {
       }
       await mkdir(directory, { recursive: true })
       if (windows) {
-        const asset = await this.releaseAsset('BtbN/FFmpeg-Builds', 'latest', 'ffmpeg-master-latest-win64-gpl-shared.zip')
-        const archive = join(directory, asset.path)
-        await this.client.download(asset, archive, this.signal, () => {})
+        const archive = join(directory, 'ffmpeg-master-latest-win64-gpl-shared.zip')
+        await this.stageAsset('ffmpeg-master-latest-win64-gpl-shared.zip', archive)
         await this.python(['-m', 'zipfile', '-e', archive, directory])
       } else {
         const asset = await this.releaseAsset('eugeneware/ffmpeg-static', 'b6.1.1', `${name}-${process.platform}-${process.arch}`)
@@ -169,8 +225,14 @@ export class EnvironmentSetup {
         url: 'https://raw.githubusercontent.com/nltk/nltk_data/4f15a3d89eefe9748ec1c05be495d91289197155/packages/tokenizers/punkt_tab.zip',
       }
       const folder = join(data, 'tokenizers')
-      const archive = join(folder, asset.path)
-      await this.client.download(asset, archive, this.signal, () => {})
+      const archive = join(folder, 'punkt_tab.zip')
+      const bundled = await this.bundleAsset('punkt_tab.zip')
+      if (bundled) {
+        await mkdir(folder, { recursive: true })
+        await copyFile(bundled.path, archive)
+      } else {
+        await this.client.download(asset, archive, this.signal, () => {})
+      }
       await this.python(['-m', 'zipfile', '-e', archive, folder])
     }
     if (!(await this.probe('punkt')).ready) throw new Error('Whisper English sentence data failed verification after installation.')

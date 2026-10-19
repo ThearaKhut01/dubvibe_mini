@@ -1,4 +1,4 @@
-import { test } from 'node:test'
+﻿import { test } from 'node:test'
 import assert from 'node:assert/strict'
 import { Context } from 'cordis'
 import { mkdtemp, mkdir, writeFile, readFile, open, cp, rm } from 'node:fs/promises'
@@ -16,14 +16,14 @@ import { runtimePaths } from '../../../apps/host/src/paths.js'
 function probeResult(action: string) {
   if (action === 'dependencies') return { missing: [] }
   if (action === 'acceleration-plan') return { backend: 'cpu', installed: true, version: '2.8.0', codec: '0.7.0', packages: [], prerequisites: [], detail: 'CPU' }
-  if (action === 'acceleration') return { backend: 'cpu', detail: 'CPU（运算检查通过）' }
+  if (action === 'acceleration') return { backend: 'cpu', detail: 'CPUï¼ˆè¿ç®—æ£€æŸ¥é€šè¿‡ï¼‰' }
   return { ready: true }
 }
 
 test('Windows first-run UV extraction preserves Unicode paths without an installed Python', { skip: process.platform !== 'win32' }, async t => {
   const root = await mkdtemp(join(tmpdir(), 'dubvibe_mini-unicode-archive-'))
-  const source = join(root, '压缩来源'), fixture = join(root, '工具.zip')
-  const data = join(root, "用户 空格 # % ' [测试]")
+  const source = join(root, 'åŽ‹ç¼©æ¥æº'), fixture = join(root, 'å·¥å…·.zip')
+  const data = join(root, "ç”¨æˆ· ç©ºæ ¼ # % ' [æµ‹è¯•]")
   await mkdir(source)
   await writeFile(join(source, 'uv.exe'), 'archive fixture, never executed')
   const shell = join(process.env.SystemRoot || 'C:/Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe')
@@ -181,6 +181,77 @@ test('first-run API runs four models concurrently, pauses independently, guards 
   assert.equal(ctx.setup.snapshot().models.length, 4)
   assert.ok(ctx.setup.snapshot().models.every(model => model.status === 'ready'))
   assert.equal((await action('resume')).status, 409)
+})
+
+test('skipping required models boots the workspace, persists the choice, and stays skipped after a restart', async t => {
+  const root = await mkdtemp(join(tmpdir(), 'dubvibe_mini-skip-'))
+  const python = join(root, 'python')
+  await writeFile(python, 'test executable')
+  if (process.platform === 'win32') await writeFile(join(root, 'avcodec-test.dll'), 'test shared library')
+  const previous = { FFMPEG_PATH: process.env.FFMPEG_PATH, FFPROBE_PATH: process.env.FFPROBE_PATH, YOUDUB_DESKTOP_DATA_DIR: process.env.YOUDUB_DESKTOP_DATA_DIR, NLTK_DATA: process.env.NLTK_DATA }
+  process.env.FFMPEG_PATH = python; process.env.FFPROBE_PATH = python
+  // downloads stays in flight (abort-aware) so start/resume shows 'downloading'
+  const downloads: string[] = []
+  // Part 1: downloads stay open until skip aborts them. Part 2 (restart):
+  // openDownloads() lets restarted downloads finish as fixture files so
+  // nothing is pending when the app later disposes (a lingering job wedges
+  // the runner child).
+  let openDownloads: () => void = () => {}
+  const gate = new Promise<void>(resolve => { openDownloads = resolve })
+  t.mock.method(DownloadClient.prototype, 'download', async function(file: any, target: string, signal?: AbortSignal) {
+    downloads.push(target)
+    await new Promise<void>((_resolve, _reject) => {
+      if (signal) signal.addEventListener('abort', () => _reject(signal.reason ?? new Error('Paused by user')), { once: true })
+      gate.then(_resolve)
+    })
+    await mkdir(dirname(target), { recursive: true })
+    await writeFile(target, Buffer.alloc(file.size ?? 16))
+  })
+  const created: string[] = []
+  const trace = (step: string) => { void appendFile(join(tmpdir(), 'dubvibe-skip-trace.log'), `${step}\n`).catch(() => {}); t.diagnostic(`step: ${step}`) }
+  const plugin = (label: string) => async function(owner: any) {
+    owner.reflect.provide('process', { run: async ({ args }: { args: string[] }) => ({ stderr: '', stdout: args[1] === 'backend.workers.setup_probe' ? JSON.stringify(probeResult(args[2]!)) : args.includes('-filters') ? ' ... subtitles ... ' : '3.12.12\n' }) })
+    owner.reflect.provide('loader', { create: async (entry: any) => { created.push(label + ':' + entry.id) }, await: async () => {}, *entries() {} })
+    await owner.plugin(Http, { host: '127.0.0.1', port: 0 })
+    await owner.plugin(Setup, { root, repoRoot: resolve('.'), python, entries: [{ id: 'runtime', name: 'runtime' }] })
+  }
+  const first = new Context()
+  const firstApp = await first.plugin(plugin('first'))
+  first.emit('app/ready')
+  await waitFor(() => first.setup.snapshot().phase === 'models' && first.setup.snapshot().models.every((model: any) => model.status === 'downloading'))
+  const state = await (await fetch(first.http.address! + '/api/setup')).json() as any
+  assert.equal((await fetch(first.http.address! + '/api/setup', { method: 'POST', body: '{}' })).status, 403)
+  const skip = await (await fetch(first.http.address! + '/api/setup', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-dubvibe_mini-Setup': state.token }, body: JSON.stringify({ action: 'skip' }) })).json() as any
+  await waitFor(() => first.setup.snapshot().phase === 'ready')
+  const persisted = JSON.parse(await readFile(join(root, 'setup-state.json'), 'utf8'))
+  assert.deepEqual(persisted.skipped.sort(), ['demucs', 'qwen', 'voxcpm', 'whisper'])
+  await firstApp.dispose()
+  // A restart must keep deploying without model downloads until the user installs them.
+  const second = new Context()
+  const secondApp = await second.plugin(plugin('second'))
+  second.emit('app/ready')
+  await waitFor(() => second.setup.snapshot().phase === 'ready')
+  assert.deepEqual(created, ['first:runtime', 'second:runtime'])
+  assert.equal(second.setup.snapshot().models.every((model: any) => model.status === 'skipped'), true)
+  assert.equal(downloads.length, 4)
+  const base = downloads.length
+  // Re-downloading one model from Settings clears its skip state for future runs.
+  const restartState = await (await fetch(second.http.address! + '/api/setup')).json() as any
+  const started = await (await fetch(second.http.address! + '/api/setup/models/whisper', {
+    method: 'POST', headers: { 'Content-Type': 'application/json', 'X-dubvibe_mini-Setup': restartState.token }, body: JSON.stringify({ action: 'start' }) })).json() as any
+  assert.equal(started.items.find((item: any) => item.id === 'whisper').status, 'downloading')
+  await waitFor(() => downloads.length > base)
+  // Let the restarted download finish so no job is pending at dispose time.
+  openDownloads()
+  await waitFor(() => second.setup.snapshot().models.find((model: any) => model.id === 'whisper')!.status === 'ready')
+  const afterRestart = JSON.parse(await readFile(join(root, 'setup-state.json'), 'utf8'))
+  assert.deepEqual(afterRestart.skipped.sort(), ['demucs', 'qwen', 'voxcpm'])
+  t.after(async () => {
+    openDownloads()
+    await firstApp.dispose(); await secondApp.dispose()
+    for (const [key, value] of Object.entries(previous)) { if (value === undefined) delete process.env[key]; else process.env[key] = value }
+    await rm(root, { recursive: true })
+  })
 })
 
 test('optional Whisper sizes download on demand after first-run finishes, with pause, resume and guards', async t => {

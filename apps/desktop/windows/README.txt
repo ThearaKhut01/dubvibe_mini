@@ -2,7 +2,10 @@ dubvibe_mini Windows x64
 
 Extract the full ZIP, then run dubvibe_mini.exe. Supports Windows 10 22H2 / Windows 11 x64.
 Requires the Microsoft Edge WebView2 Evergreen Runtime; if it is missing, the launcher offers the Microsoft download page.
-Node ships inside the bundle: no Node install or terminal needed. The first launch prepares Python, FFmpeg, and models.
+Node, Python 3.12, uv, FFmpeg, and sentence-split data ship inside the bundle, so first run works on machines
+without them and without calling the usual download sites. The first launch still installs the Python runtime
+dependencies (torch and friends) and prepares models. Model downloads can be skipped during first run and
+installed later in Settings under Local models.
 
 Data, models, and configuration: %LOCALAPPDATA%\dubvibe_mini
 Logs: %LOCALAPPDATA%\dubvibe_mini\logs\desktop.log

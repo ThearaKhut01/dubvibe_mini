@@ -49,6 +49,17 @@ describe('first-run setup', () => {
     expect(screen.getByRole('progressbar', { name: 'Qwen3 Aligner download progress' })).toHaveAttribute('aria-valuenow', '50')
     view.unmount()
   })
+  it('sends the skip action so users can install models later from Settings', async () => {
+    const fetch = vi.fn().mockResolvedValueOnce(response(state)).mockResolvedValue(response({ ...state, phase: 'ready', models: [{ ...state.models[0], status: 'skipped' }] }))
+    vi.stubGlobal('fetch', fetch)
+    const view = render(<SetupGate><div>实际工作台</div></SetupGate>)
+    await screen.findByRole('button', { name: /Skip for now/ })
+    expect(screen.getByText(/completed/)).toHaveTextContent('0/1 completed')
+    fireEvent.click(screen.getByRole('button', { name: /Skip for now/ }))
+    await waitFor(() => expect(fetch).toHaveBeenCalledWith('/api/setup', expect.objectContaining({ method: 'POST', body: JSON.stringify({ action: 'skip' }) })))
+    await screen.findByText('实际工作台')
+    view.unmount(); vi.unstubAllGlobals()
+  })
   it('copies the complete setup error, including multiline diagnostics', async () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     vi.stubGlobal('navigator', { clipboard: { writeText } })

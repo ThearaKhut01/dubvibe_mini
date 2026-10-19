@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button'
 import { InlineAlert } from '@/components/inline-alert'
 import { useClient } from '../sdk'
 
-type ModelStatus = 'pending' | 'downloading' | 'paused' | 'ready' | 'failed'
+type ModelStatus = 'pending' | 'downloading' | 'paused' | 'ready' | 'failed' | 'skipped'
 type ModelFile = { path: string; size: number; present: boolean }
 type CatalogModel = { id: string; name: string; variant: string; purpose: string; category: string; optional: boolean; installed: boolean; busy: boolean; files: ModelFile[]; status?: ModelStatus; received: number; total: number; speed: number; error?: string }
 

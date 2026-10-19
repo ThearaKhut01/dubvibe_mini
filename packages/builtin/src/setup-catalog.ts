@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { AppError } from '@dubvibe_mini/sdk'
 import modelManifest from './setup-models.json' with { type: 'json' }
 
-export type ModelStatus = 'pending' | 'downloading' | 'paused' | 'ready' | 'failed'
+export type ModelStatus = 'pending' | 'downloading' | 'paused' | 'ready' | 'failed' | 'skipped'
 export interface ModelProgress { status: ModelStatus; received: number; total: number; speed: number; error?: string }
 
 export interface CatalogOptions {

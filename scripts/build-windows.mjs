@@ -48,6 +48,39 @@ const nodeHash = await sha256(archive)
 if (!expected || expected !== nodeHash) throw new Error('Bundled Node archive SHA-256 mismatch.')
 const webview = await download(webviewArchive, `https://api.nuget.org/v3-flatcontainer/microsoft.web.webview2/${webviewVersion}/microsoft.web.webview2.${webviewVersion}.nupkg`)
 if (await sha256(webview) !== webviewHash) throw new Error('WebView2 SDK SHA-256 mismatch.')
+// Offline first-run assets, shipped under resources/bootstrap so first run
+// never needs api.github.com or raw.githubusercontent.com (the usual failure
+// point on restricted or firewalled networks). Python is the same
+// python-build-standalone interpreter uv would install; FFmpeg is the same
+// BtbN shared build setup-environment installs. All digests are verified here
+// at build time and again on first run from the generated manifest.
+async function githubAsset(repo, tag, name) {
+  const headers = { 'User-Agent': 'dubvibe_mini-build' }
+  const release = await fetch(`https://api.github.com/repos/${repo}/releases/tags/${encodeURIComponent(tag)}`, { headers }).then(response => { if (!response.ok) throw new Error(`GitHub release lookup failed (${response.status})`); return response.json() })
+  const asset = release.assets?.find(item => item.name === name)
+  if (!asset?.digest?.startsWith('sha256:')) throw new Error(`The download manifest is missing its SHA-256 digest: ${repo}/${tag}/${name}`)
+  return { url: asset.browser_download_url, size: asset.size, sha256: asset.digest.slice(7) }
+}
+async function cacheVerified(name, asset) {
+  const destination = join(cache, name)
+  let cached = false
+  try { cached = await sha256(destination) === asset.sha256 } catch (error) { if (error.code !== 'ENOENT') throw error }
+  if (!cached) {
+    run(join(system, 'curl.exe'), ['-fL', '--retry', '2', '--connect-timeout', '20', '--max-time', '3600', '-o', destination + '.part', asset.url])
+    await rename(destination + '.part', destination)
+    if (await sha256(destination) !== asset.sha256) throw new Error(`${name} SHA-256 mismatch after download.`)
+  }
+  return destination
+}
+const punktSha = 'e57f64187974277726a3417ca6f181ec5403676c717672eef6a748a7b20e0106'
+const bundledManifest = {}
+const offlineAssets = {
+  'uv-x86_64-pc-windows-msvc.zip': await githubAsset('astral-sh/uv', '0.13.0', 'uv-x86_64-pc-windows-msvc.zip'),
+  'cpython-3.12.15+20261013-x86_64-pc-windows-msvc-install_only_stripped.tar.gz': { url: 'https://github.com/astral-sh/python-build-standalone/releases/download/20261013/cpython-3.12.15%2B20261013-x86_64-pc-windows-msvc-install_only_stripped.tar.gz', size: 22019610, sha256: '7a2aef48e5ee569e310b29b32681debbc5d888e92790d85331a47736c6b06aad' },
+  'ffmpeg-master-latest-win64-gpl-shared.zip': await githubAsset('BtbN/FFmpeg-Builds', 'latest', 'ffmpeg-master-latest-win64-gpl-shared.zip'),
+  'punkt_tab.zip': { url: 'https://raw.githubusercontent.com/nltk/nltk_data/4f15a3d89eefe9748ec1c05be495d91289197155/packages/tokenizers/punkt_tab.zip', size: 4319076, sha256: punktSha },
+}
+for (const [name, asset] of Object.entries(offlineAssets)) await cacheVerified(name, asset)
 await removeGenerated(join(cache, `node-v${nodeVersion}-win-x64`))
 extractZip(archive, cache)
 const sdk = join(cache, `webview2-${webviewVersion}`)
@@ -74,6 +107,15 @@ await cp(join(sdk, 'runtimes/win-x64/native/WebView2Loader.dll'), join(app, 'Web
 await cp(join(sdk, 'LICENSE.txt'), join(app, 'WEBVIEW2-LICENSE.txt'))
 await cp(join(root, 'LICENSE'), join(app, 'LICENSE.txt'))
 await cp(join(root, 'apps/desktop/windows/dubvibe_mini.exe.config'), join(app, 'dubvibe_mini.exe.config'))
+// Ship the verified offline first-run assets into the bundle + a manifest the
+// runtime verifies again before trusting them.
+const bootstrapAssets = join(app, 'resources/bootstrap')
+await mkdir(bootstrapAssets, { recursive: true })
+for (const [name, asset] of Object.entries(offlineAssets)) {
+  await cp(join(cache, name), join(bootstrapAssets, name))
+  bundledManifest[name] = asset
+}
+await writeFile(join(bootstrapAssets, 'manifest.json'), JSON.stringify(bundledManifest, null, 2), 'utf8')
 const require = createRequire(join(root, 'apps/web/package.json'))
 const sharp = require('sharp')
 const images = await Promise.all([16, 32, 48, 64, 128, 256].map(size => sharp(join(root, 'apps/desktop/icon.png')).resize(size, size).png().toBuffer()))

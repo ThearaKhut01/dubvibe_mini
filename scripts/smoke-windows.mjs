@@ -121,7 +121,7 @@ try {
   const duplicate = launch('--smoke-test', 'duplicate')
   const rejected = await readReport(duplicate)
   assert.equal(rejected.ok, false, 'Second instance must reject the locked data directory')
-  assert.match(rejected.error, /已有 dubvibe_mini 桌面实例/)
+  assert.match(rejected.error, /A dubvibe_mini desktop instance is already running/)
   assert.equal((await exitWithin(duplicate)).code, 1)
   assert.ok((await fetch(second.url)).ok, 'Existing instance remains available')
   for (const id of Object.keys(demos)) for (const suffix of ['en.mp4', 'zh.mp4', 'poster.jpg']) {

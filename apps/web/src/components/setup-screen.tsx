@@ -1,14 +1,14 @@
 'use client'
 
 import { useState } from 'react'
-import { ArrowDownToLine, AudioLines, Check, CircleAlert, Copy, Cpu, Loader2, Mic2, Moon, Pause, Play, RotateCcw, SlidersHorizontal, Sun, Waves } from 'lucide-react'
+import { ArrowDownToLine, AudioLines, Check, CircleAlert, Copy, Cpu, Loader2, Mic2, Moon, Pause, Play, RotateCcw, SkipForward, SlidersHorizontal, Sun, Waves } from 'lucide-react'
 import { BrandMark } from '@/components/brand/brand-mark'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
 export interface SetupModel {
   id: string; name: string; variant: string; purpose: string;
-  status: 'pending' | 'downloading' | 'paused' | 'ready' | 'failed';
+  status: 'pending' | 'downloading' | 'paused' | 'ready' | 'failed' | 'skipped';
   received: number; total: number; speed: number; error?: string
 }
 export interface SetupState {
@@ -16,7 +16,7 @@ export interface SetupState {
   environment: { id: string; name: string; status: 'pending' | 'running' | 'ready' | 'failed'; detail?: string }[];
   models: SetupModel[]; error?: string; canRetry: boolean; token: string
 }
-export type SetupAction = 'pause' | 'resume' | 'retry'
+export type SetupAction = 'pause' | 'resume' | 'retry' | 'skip'
 export function sizeLabel(bytes: number) {
   if (bytes >= 1e9) return `${(bytes / 1e9).toFixed(2)} GB`
   return `${Math.round(bytes / 1e6)} MB`
@@ -34,9 +34,12 @@ export function SetupScreen({ state, busy = false, onAction, onReset }: {
   const [light, setLight] = useState(false)
   const [copiedError, setCopiedError] = useState('')
   const [copyFailure, setCopyFailure] = useState('')
-  const total = state.models.reduce((sum, model) => sum + model.total, 0)
-  const received = state.models.reduce((sum, model) => sum + model.received, 0)
-  const speed = state.models.reduce((sum, model) => sum + model.speed, 0)
+  // Skipped models are intentionally left out of the totals: they are not part
+  // of the remaining download work.
+  const countable = state.models.filter(model => model.status !== 'skipped')
+  const total = countable.reduce((sum, model) => sum + model.total, 0)
+  const received = countable.reduce((sum, model) => sum + model.received, 0)
+  const speed = countable.reduce((sum, model) => sum + model.speed, 0)
   const active = state.models.filter(model => model.status === 'downloading').length
   const complete = state.models.filter(model => model.status === 'ready').length
   const failed = state.models.some(model => model.status === 'failed')
@@ -73,7 +76,7 @@ export function SetupScreen({ state, busy = false, onAction, onReset }: {
         <div className="space-y-4 border-b border-border bg-muted p-5">
           <div className="flex items-center justify-between gap-3 text-xs tabular-nums">
             <span className="font-medium">{state.phase === 'starting' ? 'Verifying and starting the workspace' : state.phase === 'ready' ? 'All ready' : active ? `${active} models downloading in parallel` : failed ? 'Download failed' : !environmentReady ? 'Waiting for environment' : 'Download paused'}</span>
-            <span className="text-muted-foreground">{complete}/{state.models.length} completed<span className="ml-3 text-lg font-medium text-foreground">{total ? Math.floor(received / total * 100) : 0}%</span></span>
+            <span className="text-muted-foreground">{complete}/{countable.length} completed<span className="ml-3 text-lg font-medium text-foreground">{total ? Math.floor(received / total * 100) : 0}%</span></span>
           </div>
           <Progress value={total ? received / total : 0} label="Total download progress" paused={!active} />
         </div>
@@ -88,7 +91,7 @@ export function SetupScreen({ state, busy = false, onAction, onReset }: {
                   <span className="min-w-0 truncate text-sm font-medium" title={`${model.name} ${model.variant}`}>{model.name}{model.variant && <span className="ml-1.5 text-[11px] font-normal text-subtle-foreground">{model.variant}</span>}</span>
                   <span className="flex-1 whitespace-nowrap text-xs text-muted-foreground">{model.purpose}</span>
                   <span className={cn('shrink-0 text-xs tabular-nums', done ? 'text-status-success-fg' : model.status === 'failed' ? 'text-status-danger-fg' : model.status === 'downloading' ? 'text-status-running-fg' : 'text-muted-foreground')}>
-                    {done ? 'Ready' : model.status === 'failed' ? 'Failed' : model.status === 'pending' ? 'Pending download' : model.status === 'paused' ? 'Paused' : <><span className="mr-2 hidden sm:inline">{sizeLabel(model.speed)}/s</span>{model.total ? Math.floor(model.received / model.total * 100) : 0}%</>}
+                    {done ? 'Ready' : model.status === 'failed' ? 'Failed' : model.status === 'pending' ? 'Pending download' : model.status === 'skipped' ? 'Skipped for now' : model.status === 'paused' ? 'Paused' : <><span className="mr-2 hidden sm:inline">{sizeLabel(model.speed)}/s</span>{model.total ? Math.floor(model.received / model.total * 100) : 0}%</>}
                   </span>
                   {done ? <span className="flex size-7 shrink-0 items-center justify-center"><Check className="size-4 text-brand-blue" /></span> : <Button variant="ghost" size="icon-xs" disabled={busy || state.phase !== 'models' || model.status === 'pending'} aria-label={`${model.status === 'downloading' ? 'Pause' : model.status === 'failed' ? 'Retry' : 'Resume'} ${model.name}`} onClick={() => onAction(model.status === 'downloading' ? 'pause' : model.status === 'failed' ? 'retry' : 'resume', model.id)}>{model.status === 'downloading' ? <Pause /> : model.status === 'failed' ? <RotateCcw /> : <Play />}</Button>}
                 </div>
@@ -106,8 +109,11 @@ export function SetupScreen({ state, busy = false, onAction, onReset }: {
         {copyFailure && <p role="status" className="mt-2">{copyFailure}</p>}
       </div>}
       <div className="mt-5 flex items-center justify-between gap-3">
-        <span className="text-xs tabular-nums text-muted-foreground">{sizeLabel(received)} / {sizeLabel(total)}{speed > 0 && <span className="ml-3 text-subtle-foreground">{sizeLabel(speed)}/s</span>}</span>
-        {state.phase === 'failed' ? state.canRetry && <Button disabled={busy} onClick={() => onAction('retry')}><RotateCcw />Prepare again</Button> : state.phase === 'models' ? <Button variant="outline" size="lg" disabled={busy} onClick={() => onAction(active ? 'pause' : failed ? 'retry' : 'resume')}>{active ? <Pause /> : failed ? <RotateCcw /> : <ArrowDownToLine />}{active ? 'Pause all' : failed ? 'Retry download' : 'Resume download'}</Button> : state.phase === 'starting' && <Loader2 aria-label="Starting" className="size-5 animate-spin text-brand-pink" />}
+<div className="flex items-center gap-2">
+  <span className="text-xs tabular-nums text-muted-foreground">{sizeLabel(received)} / {sizeLabel(total)}{speed > 0 && <span className="ml-3 text-subtle-foreground">{sizeLabel(speed)}/s</span>}</span>
+  {state.phase === 'models' && <Button variant="ghost" size="sm" disabled={busy} title="Install models later from Settings" onClick={() => onAction('skip')}><SkipForward />Skip for now</Button>}
+  {state.phase === 'failed' ? state.canRetry && <Button disabled={busy} onClick={() => onAction('retry')}><RotateCcw />Prepare again</Button> : state.phase === 'models' ? <Button variant="outline" size="lg" disabled={busy} onClick={() => onAction(active ? 'pause' : failed ? 'retry' : 'resume')}>{active ? <Pause /> : failed ? <RotateCcw /> : <ArrowDownToLine />}{active ? 'Pause all' : failed ? 'Retry download' : 'Resume download'}</Button> : state.phase === 'starting' && <Loader2 aria-label="Starting" className="size-5 animate-spin text-brand-pink" />}
+</div>
       </div>
     </main>
   </div>

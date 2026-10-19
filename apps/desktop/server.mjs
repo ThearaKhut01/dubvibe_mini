@@ -17,6 +17,10 @@ config({ path: join(data, '.env'), quiet: true })
 process.env.DUBVIBE_MINI_HOST = '127.0.0.1'
 process.env.DUBVIBE_MINI_PORT = '0'
 process.env.DUBVIBE_MINI_PYTHON_ENV_DIR = join(data, 'runtime', 'venv')
+// Offline first-run assets (uv/Python/FFmpeg/punkt) shipped inside the bundle
+// under <app>/resources/bootstrap; dev checkouts have no such folder and fall
+// back to the historical downloads.
+process.env.DUBVIBE_MINI_APP_ASSETS = join(import.meta.dirname, '..', '..', '..', 'bootstrap')
 process.env.PYTHONDONTWRITEBYTECODE = '1'
 process.env.npm_execpath = join(dirname(process.execPath), 'node_modules/npm/bin/npm-cli.js')
 // Resolve through the bundled Node loader without writing .cordis into the signed app.

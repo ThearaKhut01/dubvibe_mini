@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from pydantic import Field, SecretStr, ValidationError
 
+from ..config import env
 from .contracts import BaseUrl, Contract, NonEmptyString
 
 MAX_COMPLETION_TOKENS = 65_535
@@ -10,8 +11,14 @@ MAX_COMPLETION_TOKENS = 65_535
 
 class ConnectionTest(Contract):
     base_url: BaseUrl
-    model: NonEmptyString
+    model: NonEmptyString | None = None
     api_key: SecretStr | None = Field(default=None)
+
+
+def default_model() -> str:
+    """First configured translation candidate, for tests the user runs without typing a model name."""
+    configured = env("TRANSLATION_MODELS", "gpt-4.1-mini")
+    return next((name.strip() for name in configured.split(",") if name.strip()), "gpt-4.1-mini")
 
 
 def check_connection(payload: dict, bridge) -> dict:
@@ -19,7 +26,8 @@ def check_connection(payload: dict, bridge) -> dict:
     try:
         config = ConnectionTest.model_validate(payload)
     except ValidationError:
-        raise WorkerError('INVALID_CONFIG', 'Enter a valid service URL, model, and API key.') from None
+        raise WorkerError('INVALID_CONFIG', 'Enter a valid service URL and API key.') from None
+    model = (config.model or default_model()).strip()
     key = config.api_key.get_secret_value().strip() if config.api_key else ''
     if not key:
         current = next((item for item in bridge.store.settings_values().get('connections', [])
@@ -34,7 +42,7 @@ def check_connection(payload: dict, bridge) -> dict:
     try:
         with OpenAI(base_url=config.base_url, api_key=key, max_retries=0,
                     timeout=httpx.Timeout(30.0, connect=10.0)) as client:
-            response = client.chat.completions.create(model=config.model, max_completion_tokens=MAX_COMPLETION_TOKENS,
+            response = client.chat.completions.create(model=model, max_completion_tokens=MAX_COMPLETION_TOKENS,
                 messages=[{'role': 'user', 'content': 'Connection test. Reply with the word OK.'}])
             if not response.choices or not response.choices[0].message.content:
                 raise WorkerError('INVALID_CONFIG', 'The service returned no usable text; check that the model supports the chat API.')

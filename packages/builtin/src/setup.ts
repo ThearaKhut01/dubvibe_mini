@@ -1,6 +1,7 @@
 import { Service, type Context } from 'cordis'
 import type { EntryOptions } from '@cordisjs/plugin-loader'
 import { randomBytes, timingSafeEqual } from 'node:crypto'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { AppError } from '@dubvibe_mini/sdk'
@@ -27,6 +28,10 @@ function cancelled(error: unknown, signal: AbortSignal): boolean {
 }
 const loopback = (host: string) => ['127.0.0.1', 'localhost', '[::1]', '::1', '::ffff:127.0.0.1'].includes(host)
 const localPath = (path: string) => resolve(path.startsWith('~/') ? join(homedir(), path.slice(2)) : path)
+// Model id → setup-probe adapter id, used to relax the final verify probe for
+// models the user chose to skip; a skipped model fails later with a readable
+// task error instead of blocking the whole workspace at first run.
+const ADAPTER_BY_MODEL: Record<string, string> = { whisper: 'whisper', voxcpm: 'voxcpm', demucs: 'demucs', qwen: 'qwen_forced_aligner' }
 declare module 'cordis' { interface Context { setup: SetupService } }
 
 export default class SetupService extends Service {
@@ -44,6 +49,9 @@ export default class SetupService extends Service {
   // First-run gates only required models; optional entries (extra Whisper sizes) are downloaded on demand.
   private models: ModelDownload[] = modelManifest.filter(model => !model.optional).map(model => ({ id: model.id, name: model.name, variant: model.variant, purpose: model.purpose, status: 'pending', received: 0, total: model.files.reduce((sum, file) => sum + file.size, 0), speed: 0 }))
   private optionalModels = new Map<string, ModelDownload>()
+  // Model ids the user skipped. Persisted in the data root so a restart keeps
+  // skipping them until the user downloads (or removes) the model in Settings.
+  private skipped = new Set<string>()
   constructor(ctx: Context, private config: SetupConfig) {
     super(ctx, 'setup')
     this.environment = new EnvironmentSetup(ctx, config, this.client, this.stopping.signal)
@@ -79,16 +87,30 @@ export default class SetupService extends Service {
         const job = this.jobs.get(id)
         if (job) { job.controller.abort(new Error('Paused by user')); await job.promise }
         else if (!this.models.some(model => model.id === id)) this.optionalModels.delete(id)
-      } else this.download(id)
+      } else {
+        this.skipped.delete(id)
+        await this.persistSkipped()
+        this.download(id)
+      }
       this.ctx.http.json(request, 200, { items: this.catalog() })
     }))
     this.ctx.effect(() => this.ctx.http.register('POST', '/api/setup', async request => {
       const { action, id } = await readJson(request)
-      if (!['pause', 'resume', 'retry'].includes(action) || (id !== undefined && !this.models.some(model => model.id === id))) throw new AppError('INVALID_INPUT', 'Invalid setup action or model.', 422)
+      if (!['pause', 'resume', 'skip', 'retry'].includes(action) || (id !== undefined && !this.models.some(model => model.id === id))) throw new AppError('INVALID_INPUT', 'Invalid setup action or model.', 422)
       if (this.phase === 'ready' || this.phase === 'starting') throw new AppError('SETUP_FINISHED', 'Environment preparation has finished.', 409)
       if (action === 'retry' && !id && this.phase === 'failed') {
         if (this.bootAttempted) throw new AppError('RESTART_REQUIRED', 'The workspace failed to start; review the error and restart the app.', 409)
         this.prepare()
+      } else if (action === 'skip' && !id) {
+        if (this.phase !== 'models') throw new AppError('ENVIRONMENT_NOT_READY', 'Wait for environment preparation to finish.', 409)
+        for (const model of this.models) this.jobs.get(model.id)?.controller.abort(new Error('Skipped by user'))
+        await Promise.all([...this.jobs.values()].map(job => job.promise))
+        for (const model of this.models) {
+          if (model.status === 'ready') { this.skipped.delete(model.id); continue }
+          this.skipped.add(model.id); model.status = 'skipped'; model.error = undefined; model.speed = 0
+        }
+        await this.persistSkipped()
+        this.finishIfReady()
       } else {
         if (this.phase !== 'models') throw new AppError('ENVIRONMENT_NOT_READY', 'Wait for environment preparation to finish.', 409)
         const targets = this.models.filter(model => (!id || model.id === id) && model.status !== 'ready')
@@ -99,7 +121,10 @@ export default class SetupService extends Service {
             else if (model.status !== 'failed') model.status = 'paused'
           }
           await Promise.all(targets.map(model => this.jobs.get(model.id)?.promise))
-        } else for (const model of targets) if (['paused', 'failed', 'pending'].includes(model.status)) this.download(model.id)
+        } else if (action === 'resume') {
+          for (const model of targets) if (['paused', 'failed', 'pending', 'skipped'].includes(model.status)) { this.skipped.delete(model.id); this.download(model.id) }
+          await this.persistSkipped()
+        }
       }
       this.ctx.http.json(request, 200, this.snapshot())
     }))
@@ -117,6 +142,29 @@ export default class SetupService extends Service {
   }
   async remove(id: string) {
     await removeFiles(this.root(id), id, { busy: this.jobs.has(id) })
+    // Removing a required model (Settings) deliberately keeps it skipped — the
+    // user asked for its removal, so a restart must not re-download it.
+    const known = this.models.find(model => model.id === id)
+    if (known) { known.status = 'skipped'; known.received = 0; this.skipped.add(id); await this.persistSkipped() }
+  }
+  private stateFile() {
+    return join(this.config.root, 'setup-state.json')
+  }
+  private async loadSkipped() {
+    try {
+      const raw = JSON.parse(await readFile(this.stateFile(), 'utf8'))
+      this.skipped = new Set(Array.isArray(raw?.skipped) ? raw.skipped.filter((id: unknown) => typeof id === 'string' && modelManifest.some(model => model.id === id)) : [])
+    } catch (error: any) {
+      if (error?.code !== 'ENOENT') throw error
+    }
+  }
+  private async persistSkipped() {
+    try {
+      await mkdir(this.config.root, { recursive: true })
+      await writeFile(this.stateFile(), JSON.stringify({ skipped: [...this.skipped] }, null, 2), 'utf8')
+    } catch (error) {
+      this.ctx.logger.warn('Failed to persist the skipped-model state: ' + message(error))
+    }
   }
   private guard(request: HttpRequest) {
     const host = new URL(`http://${request.raw.headers.host || 'invalid'}`).hostname
@@ -159,15 +207,19 @@ export default class SetupService extends Service {
     this.preparing = (async () => {
       process.env.DUBVIBE_MINI_DESKTOP_DATA_DIR = this.config.root
       await this.environment.prepare()
+      await this.loadSkipped()
       for (const model of this.models) {
         const definition = modelManifest.find(item => item.id === model.id)!
         const sizes = await Promise.all(definition.files.map(file => fileSize(join(this.root(model.id), file.path))))
         const ready = sizes.every((size, i) => size === definition.files[i]!.size)
         model.received = sizes.reduce((sum, size, i) => sum + (size === definition.files[i]!.size ? size : 0), 0)
-        model.status = ready ? 'ready' : 'pending'
+        if (ready) { model.status = 'ready'; this.skipped.delete(model.id) }
+        else if (this.skipped.has(model.id)) model.status = 'skipped'
+        else model.status = 'pending'
       }
+      await this.persistSkipped()
       this.phase = 'models'
-      for (const model of this.models) if (model.status !== 'ready') this.download(model.id)
+      for (const model of this.models) if (model.status === 'pending') this.download(model.id)
       this.finishIfReady()
     })().catch(error => this.fail(error)).finally(() => { this.preparing = undefined })
   }
@@ -193,16 +245,18 @@ export default class SetupService extends Service {
       }
       model.status = 'ready'
     })().catch(error => {
-      if (cancelled(error, signal)) model.status = 'paused'
+      if (cancelled(error, signal)) model.status = this.skipped.has(id) ? 'skipped' : 'paused'
       else { model.status = 'failed'; model.error = message(error); this.ctx.logger.error(error) }
     }).finally(() => { model.speed = 0; this.jobs.delete(id); this.finishIfReady() })
     this.jobs.set(id, { controller, promise })
   }
   private finishIfReady() {
-    if (this.phase !== 'models' || this.finishing || !this.models.every(model => model.status === 'ready') || this.stopping.signal.aborted) return
+    const bootable = this.models.every(model => model.status === 'ready' || model.status === 'skipped')
+    if (this.phase !== 'models' || this.finishing || !bootable || this.stopping.signal.aborted) return
     this.phase = 'starting'
     this.finishing = (async () => {
-      await this.environment.probe('verify')
+      const skipAdapters = this.models.filter(model => model.status === 'skipped').map(model => ADAPTER_BY_MODEL[model.id] ?? model.id)
+      await this.environment.probe('verify', { skipAdapters })
       this.bootAttempted = true
       for (const entry of this.config.entries) await this.ctx.loader.create(entry)
       await this.ctx.loader.await()
