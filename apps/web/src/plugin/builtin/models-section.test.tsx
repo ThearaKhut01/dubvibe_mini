@@ -1,9 +1,12 @@
+import type { Context } from 'cordis'
+import type { RequestInit } from 'undici'
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { LanguageProvider } from '@/lib/i18n'
+import { PluginContextProvider } from '../sdk'
 import { ModelsSection } from './models-section'
 
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); window.localStorage.clear() })
+afterEach(() => { cleanup(); window.localStorage.clear() })
 
 const catalog = {
   items: [
@@ -12,18 +15,23 @@ const catalog = {
   ],
 }
 
-it('shows Remove only for installed models and removes through the guarded route with the setup token', async () => {
-  const calls: Array<{ url: string; method?: string; headers?: Record<string, string> }> = []
-  const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
-    calls.push({ url, method: init?.method, headers: init?.headers as Record<string, string> | undefined })
-    if (url === '/api/setup/models' && !init?.method) return new Response(JSON.stringify(catalog))
-    if (url === '/api/setup' && !init?.method) return new Response(JSON.stringify({ token: 'setup-token' }))
-    if (url === '/api/setup/models/whisper' && init?.method === 'DELETE') return new Response(JSON.stringify({ items: [catalog.items[1]] }))
-    return new Response('{}', { status: 404 })
-  })
-  vi.stubGlobal('fetch', fetchMock)
+function clientWith(request: (path: string, init?: RequestInit) => Promise<unknown>) {
+  return {
+    apiClient: { request },
+    slots: { register: () => () => {}, subscribe: () => () => {}, getSnapshot: () => 0, list: () => [] },
+    effect: (effect: () => unknown) => effect(),
+  } as unknown as Context
+}
 
-  render(<LanguageProvider><ModelsSection /></LanguageProvider>)
+it('shows Remove only for installed models and removes through the guarded route with the setup token', async () => {
+  const request = vi.fn(async (path: string, init?: RequestInit) => {
+    if (path === '/api/setup/models') return { items: catalog.items }
+    if (path === '/api/setup') return { token: 'setup-token' }
+    if (path === '/api/setup/models/whisper') return { items: [catalog.items[1]] }
+    throw Object.assign(new Error('Unknown model.'), { status: 404 })
+  })
+
+  render(<PluginContextProvider context={clientWith(request)}> <LanguageProvider><ModelsSection /></LanguageProvider></PluginContextProvider>)
   // Groups start collapsed; open the category dropdown to reach the model row.
   fireEvent.click(await screen.findByRole('button', { name: /Speech recognition/ }))
   await screen.findByText('Whisper')
@@ -32,28 +40,25 @@ it('shows Remove only for installed models and removes through the guarded route
   fireEvent.click(screen.getByRole('button', { name: /Remove/ }))
   await waitFor(() => expect(screen.queryByText('Whisper')).not.toBeInTheDocument())
 
-  const removal = calls.find(call => call.method === 'DELETE')!
-  expect(removal.url).toBe('/api/setup/models/whisper')
-  expect(removal.headers).toMatchObject({ 'X-dubvibe_mini-Setup': 'setup-token' })
+  const removal = request.mock.calls.find(([path, init]) => path === '/api/setup/models/whisper' && init?.method === 'DELETE')!
+  expect(removal).toBeTruthy()
+  expect((removal[1]!.headers as Record<string, string>)['X-dubvibe_mini-Setup']).toBe('setup-token')
 })
 
 it('downloads a missing model through the guarded POST route and pauses a running transfer', async () => {
-  const calls: Array<{ url: string; method?: string; body?: unknown }> = []
   let items = catalog.items
-  const fetching = vi.fn(async (url: string, init?: RequestInit) => {
-    calls.push({ url, method: init?.method, body: init?.body ? JSON.parse(String(init.body)) : undefined })
-    if (url === '/api/setup/models' && !init?.method) return new Response(JSON.stringify({ items }))
-    if (url === '/api/setup' && !init?.method) return new Response(JSON.stringify({ token: 'setup-token' }))
-    if (url === '/api/setup/models/demucs' && init?.method === 'POST') {
-      const { action } = JSON.parse(String(init.body))
+  const request = vi.fn(async (path: string, init?: RequestInit) => {
+    if (path === '/api/setup/models') return { items }
+    if (path === '/api/setup') return { token: 'setup-token' }
+    if (path === '/api/setup/models/demucs') {
+      const { action } = JSON.parse(String(init!.body)) as { action: string }
       items = [{ ...catalog.items[1], busy: action === 'start', status: action === 'start' ? 'downloading' : 'paused', received: 40 * 1024 ** 2, speed: 0 }]
-      return new Response(JSON.stringify({ items }))
+      return { items }
     }
-    return new Response('{}', { status: 404 })
+    throw Object.assign(new Error('Unknown model.'), { status: 404 })
   })
-  vi.stubGlobal('fetch', fetching)
 
-  render(<LanguageProvider><ModelsSection /></LanguageProvider>)
+  render(<PluginContextProvider context={clientWith(request)}><LanguageProvider><ModelsSection /></LanguageProvider></PluginContextProvider>)
   fireEvent.click(await screen.findByRole('button', { name: /Vocal separation/ }))
   await screen.findByText('Demucs')
 
@@ -62,8 +67,8 @@ it('downloads a missing model through the guarded POST route and pauses a runnin
   fireEvent.click(screen.getByRole('button', { name: /Pause/ }))
   await screen.findByRole('button', { name: /Resume/ })
 
-  const posts = calls.filter(call => call.method === 'POST')
+  const posts = request.mock.calls.filter(([path, init]) => path === '/api/setup/models/demucs' && init?.method === 'POST')
   expect(posts).toHaveLength(2)
-  expect(posts[0]).toMatchObject({ url: '/api/setup/models/demucs', body: { action: 'start' } })
-  expect(posts[1]).toMatchObject({ url: '/api/setup/models/demucs', body: { action: 'pause' } })
+  expect(JSON.parse(String(posts[0]![1]!.body))).toEqual({ action: 'start' })
+  expect(JSON.parse(String(posts[1]![1]!.body))).toEqual({ action: 'pause' })
 })

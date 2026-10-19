@@ -3,6 +3,7 @@ import { ArrowDownToLine, ChevronDown, Pause, Play, RotateCcw, Trash2 } from 'lu
 import { useText } from '@/lib/i18n'
 import { Button } from '@/components/ui/button'
 import { InlineAlert } from '@/components/inline-alert'
+import { useClient } from '../sdk'
 
 type ModelStatus = 'pending' | 'downloading' | 'paused' | 'ready' | 'failed'
 type ModelFile = { path: string; size: number; present: boolean }
@@ -23,6 +24,7 @@ const CATEGORY_LABELS: Record<string, readonly [string, string, string?]> = {
 // Groups models by category behind one collapsible header per category.
 export function ModelsSection() {
   const tx = useText()
+  const { apiClient } = useClient()
   const [items, setItems] = useState<CatalogModel[]>([])
   const [open, setOpen] = useState<Record<string, boolean>>({})
   const [token, setToken] = useState('')
@@ -45,8 +47,8 @@ export function ModelsSection() {
 
   async function load() {
     const [catalog, setup] = await Promise.all([
-      fetch('/api/setup/models', { cache: 'no-store', credentials: 'same-origin' }).then(response => response.json()),
-      fetch('/api/setup', { cache: 'no-store', credentials: 'same-origin' }).then(response => response.json()),
+      apiClient.request<{ items: CatalogModel[] }>('/api/setup/models'),
+      apiClient.request<{ token: string }>('/api/setup'),
     ])
     setItems(catalog.items)
     // Downloads in progress stay visible: expand their category the first time we load.
@@ -80,11 +82,10 @@ export function ModelsSection() {
   async function remove(id: string) {
     setBusy(true); setFailure('')
     try {
-      const response = await fetch(`/api/setup/models/${encodeURIComponent(id)}`, {
-        method: 'DELETE', credentials: 'same-origin', headers: { 'X-dubvibe_mini-Setup': token },
+      // Non-GET requests must carry the session CSRF token, so use the shared apiClient.
+      const next = await apiClient.request<{ items: CatalogModel[] }>(`/api/setup/models/${encodeURIComponent(id)}`, {
+        method: 'DELETE', headers: { 'X-dubvibe_mini-Setup': token },
       })
-      if (!response.ok) throw new Error(`Remove failed (${response.status})`)
-      const next = await response.json()
       setItems(next.items)
     } catch (error) {
       setFailure(error instanceof Error ? error.message : String(error))
@@ -96,13 +97,9 @@ export function ModelsSection() {
   async function control(id: string, action: 'start' | 'pause') {
     setBusy(true); setFailure('')
     try {
-      const response = await fetch(`/api/setup/models/${encodeURIComponent(id)}`, {
-        method: 'POST', credentials: 'same-origin',
-        headers: { 'Content-Type': 'application/json', 'X-dubvibe_mini-Setup': token },
-        body: JSON.stringify({ action }),
+      const next = await apiClient.request<{ items: CatalogModel[] }>(`/api/setup/models/${encodeURIComponent(id)}`, {
+        method: 'POST', headers: { 'X-dubvibe_mini-Setup': token }, body: JSON.stringify({ action }),
       })
-      if (!response.ok) throw new Error(`Download failed (${response.status})`)
-      const next = await response.json()
       setItems(next.items)
     } catch (error) {
       setFailure(error instanceof Error ? error.message : String(error))
