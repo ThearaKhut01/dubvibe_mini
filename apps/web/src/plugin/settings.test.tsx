@@ -29,7 +29,10 @@ it('freezes connection inputs during saving and refreshes provider readiness aft
   await user.type(key, 'new-key')
   await user.click(screen.getByRole('button', { name: 'Connect' }))
   expect(key).toBeDisabled()
-  expect(screen.getByLabelText('Service URL')).toBeDisabled()
+  // OpenAI is a ready-made provider: the endpoint is fixed, so the card shows
+  // the URL as text and offers no editable Service URL input at all.
+  expect(screen.queryByLabelText('Service URL')).toBeNull()
+  expect(screen.getByText('https://example.test/v1')).toBeInTheDocument()
   saved = true
   await act(async () => finish({}))
   await screen.findByRole('button', { name: 'Saved' })
@@ -91,6 +94,34 @@ it('offers a Custom API card without a saved connection and sends its model to t
   expect(probe.base_url).toBe('https://router.example/v1')
   expect(probe.model).toBe('router/model')
   expect(probe.api_key).toBeUndefined()
+})
+
+it('offers a CodeCraft API card with a fixed endpoint and a key-only connect', async () => {
+  const request = vi.fn(async (path: string, init?: RequestInit) => {
+    if (init?.method === 'PATCH') return {}
+    if (path === '/api/v2/settings') return { connections: [] }
+    if (path === '/api/v2/catalog') return { workflows: [], providers: [
+      { id: 'codecraft', adapter: 'codecraft', label: 'CodeCraft API', operations: [], execution: 'remote', available: false, requires_api_key: true, models: [] },
+    ] }
+    return { items: [] }
+  })
+  let Page!: ComponentType<RouteProps>
+  const context = { apiClient: { request }, slots: {
+    register: (slot: string, entry: SlotMap['shell.routes']) => { if (slot === 'shell.routes') Page = entry.component; return () => {} }, subscribe: () => () => {}, getSnapshot: () => 0, list: () => [],
+  }, effect: (effect: () => unknown) => effect() } as unknown as Context
+  apply(context)
+  render(<PluginContextProvider context={context}><ThemeProvider><LanguageProvider><Page params={{}} /></LanguageProvider></ThemeProvider></PluginContextProvider>)
+  await screen.findAllByText('CodeCraft API')
+  const card = screen.getAllByText('CodeCraft API').map(node => node.closest('form')).find(Boolean) as HTMLElement
+  // Key-only provider: the endpoint is fixed text, not an editable field.
+  expect(within(card).queryByLabelText('Service URL')).toBeNull()
+  expect(within(card).getByText('https://codecraftapi.com/v1')).toBeInTheDocument()
+  const user = userEvent.setup()
+  await user.type(within(card).getByLabelText('API Key'), 'cc-key')
+  await user.click(within(card).getByRole('button', { name: 'Connect' }))
+  await within(card).findByText('Saved')
+  const patch = JSON.parse(request.mock.calls.find(([path, init]) => path === '/api/v2/settings' && init?.method === 'PATCH')![1]!.body as string)
+  expect(patch.connection).toEqual({ adapter: 'codecraft', base_url: 'https://codecraftapi.com/v1', api_key: 'cc-key' })
 })
 
 it('probes runtime before refreshing its catalog, serializes clicks and surfaces probe failures without retrying', async () => {

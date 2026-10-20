@@ -13,6 +13,7 @@ from .contracts import Contract
 from .errors import ApiError
 from .segments import LANGUAGES, Segment, Transcript, TranslatedSegment, Translation, read_transcript
 from .steps import Completed, StageContext
+from .runtime import TRANSLATION_ADAPTERS
 
 MAX_SEGMENTS = 20
 MAX_TEXT_CHARS = 6000
@@ -194,14 +195,33 @@ def _model_for(context: StageContext, provider: str) -> str:
     if provider == context.config.translation.adapter:
         return context.config.translation.model
     models = getattr(context.config, "translation_models", None) or {}
-    if provider not in models:
-        raise ApiError(422, "INVALID_CONFIG", f"No translation model is configured for {provider}.",
-                       stage="translate", action="adjust_settings")
-    return models[provider]
+    if provider in models:
+        return models[provider]
+    # An explicitly configured chain keeps strict per-provider model settings;
+    # automatic fallback may use the adapter's configured default model, so an
+    # unset model never aborts a chain the user never explicitly built.
+    if not getattr(context.config, "translation_providers", None):
+        from .runtime import default_translation_model
+        return default_translation_model(provider)
+    raise ApiError(422, "INVALID_CONFIG", f"No translation model is configured for {provider}.",
+                   stage="translate", action="adjust_settings")
 
 
 async def _translate_chain(context: StageContext, transcript: Transcript, progress: Callable) -> Translation:
-    names = list(getattr(context.config, "translation_providers", None) or [context.config.translation.adapter])
+    # An explicitly configured chain keeps strict per-provider model settings.
+    # Without one, a failing primary automatically falls back to the other
+    # remote adapters the user actually configured (connection with URL and
+    # key), each with its default model. Unconfigured adapters never enter the
+    # chain, so their absence cannot mask the primary provider's real error.
+    explicit = getattr(context.config, "translation_providers", None)
+    primary = context.config.translation.adapter
+    if explicit:
+        names = list(explicit)
+    else:
+        others = [name for name in TRANSLATION_ADAPTERS if name != primary
+                  and context.connections.get(name, {}).get("base_url")
+                  and context.connections.get(name, {}).get("api_key")]
+        names = [primary, *others]
     last: ApiError | None = None
     for position, name in enumerate(names):
         if position:

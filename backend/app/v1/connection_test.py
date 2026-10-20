@@ -3,7 +3,6 @@ from __future__ import annotations
 
 from pydantic import Field, SecretStr, ValidationError
 
-from ..config import env
 from .contracts import BaseUrl, Contract, NonEmptyString
 
 MAX_COMPLETION_TOKENS = 65_535
@@ -15,10 +14,20 @@ class ConnectionTest(Contract):
     api_key: SecretStr | None = Field(default=None)
 
 
-def default_model() -> str:
-    """First configured translation candidate, for tests the user runs without typing a model name."""
-    configured = env("TRANSLATION_MODELS", "gpt-4.1-mini")
-    return next((name.strip() for name in configured.split(",") if name.strip()), "gpt-4.1-mini")
+def default_model(base_url: str) -> str:
+    """Per-service default for tests the user runs without typing a model name.
+
+    The generic OpenAI default sent to Google or an aggregator answers HTTP 404
+    ("model not found"), so the endpoint host selects the right adapter default.
+    """
+    from urllib.parse import urlsplit
+    from .runtime import default_translation_model
+    host = (urlsplit(str(base_url)).hostname or '').lower()
+    if host.endswith('generativelanguage.googleapis.com'):
+        return default_translation_model('gemini')
+    if host in ('codecraftapi.com', 'www.codecraftapi.com'):
+        return default_translation_model('codecraft')
+    return default_translation_model('openai')
 
 
 def check_connection(payload: dict, bridge) -> dict:
@@ -27,7 +36,7 @@ def check_connection(payload: dict, bridge) -> dict:
         config = ConnectionTest.model_validate(payload)
     except ValidationError:
         raise WorkerError('INVALID_CONFIG', 'Enter a valid service URL and API key.') from None
-    model = (config.model or default_model()).strip()
+    model = (config.model or default_model(config.base_url)).strip()
     key = config.api_key.get_secret_value().strip() if config.api_key else ''
     if not key:
         from .runtime import TRANSLATION_ADAPTERS
@@ -49,7 +58,9 @@ def check_connection(payload: dict, bridge) -> dict:
                 raise WorkerError('INVALID_CONFIG', 'The service returned no usable text; check that the model supports the chat API.')
     except APIStatusError as exc:
         limit = ' The request used a 65535-token output cap; confirm the service supports this limit.' if exc.status_code == 400 else ''
-        raise WorkerError('INVALID_CONFIG', f'Connection test failed (HTTP {exc.status_code}); check the service URL, model, and key.{limit}') from exc
+        missing_model = (f' A 404 usually means the model id does not exist on this service (requested model "{model}"); '
+                         'enter a model name this service provides.' if exc.status_code == 404 else '')
+        raise WorkerError('INVALID_CONFIG', f'Connection test failed (HTTP {exc.status_code}); check the service URL, model, and key.{limit}{missing_model}') from exc
     except (APIConnectionError, APITimeoutError):
         raise WorkerError('INVALID_CONFIG', 'Connection test failed: the connection was unavailable or timed out; check the URL and network.') from None
     except WorkerError:

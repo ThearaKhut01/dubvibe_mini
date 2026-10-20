@@ -76,3 +76,31 @@ def test_fallback_without_configured_model_is_rejected_not_guessed(context, prov
         translate.run(ctx, lambda *args: None)
     assert error.value.content["error"]["code"] == "INVALID_CONFIG"
     assert len(provider.calls) == 1
+
+
+def test_automatic_fallback_tries_other_configured_services(context, provider):
+    provider.error = provider.StatusError(401)
+    provider.fail_only_base_url = "https://pinned.example/v1"
+    connections = {"openai": {"base_url": "https://pinned.example/v1", "api_key": "k"},
+                   "codecraft": {"base_url": "https://craft.example/v1", "api_key": "k"}}
+    progress = []
+    result = translate.run(replace(context, connections=connections),
+                           lambda fraction, message: progress.append(message))
+    assert any("Falling back to translation provider codecraft" in message for message in progress)
+    assert [options["base_url"] for options in provider.options][-1] == "https://craft.example/v1"
+    # The secondary has no explicit model entry, so the chain uses the
+    # adapter's configured default model.
+    assert [call["model"] for call in provider.calls][-1] == "gpt-5.6-luna"
+    assert result.output_files["translation"].exists()
+
+
+def test_automatic_fallback_skips_services_without_connection(context, provider):
+    provider.error = provider.StatusError(401)
+    progress = []
+    with pytest.raises(ApiError) as error:
+        translate.run(context, lambda fraction, message: progress.append(message))
+    # Only the primary is configured; unconfigured adapters must not enter
+    # the chain and mask the primary provider's real error.
+    assert error.value.content["error"]["code"] == "PROVIDER_REJECTED"
+    assert len(provider.options) == 1
+    assert not any("Falling back" in message for message in progress)

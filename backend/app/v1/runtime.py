@@ -85,10 +85,28 @@ def _whisper_models(devices: list[dict[str, Any]]) -> tuple[list[dict[str, Any]]
     return models, None if models else "No non-empty local Whisper .pt checkpoints found; install them into the Whisper models directory."
 
 
-# OpenAI-compatible remote translation adapters. Gemini exposes an OpenAI-compatible endpoint,
-# so it uses the same client with its own base_url and key; `custom` is any other
-# OpenAI-compatible service (OpenRouter, OneAPI, LM Studio, self-hosted gateways…).
-TRANSLATION_ADAPTERS = ("openai", "gemini", "custom")
+# OpenAI-compatible remote translation adapters. Gemini and CodeCraft expose
+# OpenAI-compatible endpoints, so they use the same client with their own
+# base_url and key; `custom` is any other OpenAI-compatible service
+# (OpenRouter, OneAPI, LM Studio, self-hosted gateways…). The order below is
+# also the automatic fallback order when a task's primary provider fails.
+TRANSLATION_ADAPTERS = ("openai", "gemini", "codecraft", "custom")
+
+# Per-adapter translation model fallbacks: tests and fallback runs use these
+# unless the user configures a model for the adapter. Envs are the usual
+# DUBVIBE_MINI_* (legacy YOUDUB_* aliases accepted).
+TRANSLATION_MODEL_DEFAULTS = {
+    "openai": ("TRANSLATION_MODELS", "gpt-4.1-mini"),
+    "gemini": ("GEMINI_MODELS", "gemini-2.5-flash"),
+    "codecraft": ("CODECRAFT_MODELS", "gpt-5.6-luna"),
+    "custom": ("TRANSLATION_MODELS", "gpt-4.1-mini"),
+}
+
+
+def default_translation_model(adapter: str) -> str:
+    env_name, fallback = TRANSLATION_MODEL_DEFAULTS.get(adapter, ("TRANSLATION_MODELS", "gpt-4.1-mini"))
+    configured = env(env_name, fallback)
+    return next((name.strip() for name in configured.split(",") if name.strip()), fallback)
 
 
 def _translation_models(
@@ -110,14 +128,14 @@ def _translation_models(
         return [], "Provider API key is not configured."
     # These are configured candidates, not a discovery/health response from the
     # provider. No client is constructed and no remote request is made here.
-    configured = env("TRANSLATION_MODELS", "gpt-4.1-mini")
-    candidates = [name.strip() for name in configured.split(",") if name.strip()]
+    env_name, env_default = TRANSLATION_MODEL_DEFAULTS.get(adapter, ("TRANSLATION_MODELS", "gpt-4.1-mini"))
+    candidates = [name.strip() for name in env(env_name, env_default).split(",") if name.strip()]
     if translation_model and translation_model.strip():
         candidates.append(translation_model.strip())
     from .translate import MAX_TEXT_CHARS
     models = [_model(name, ["remote"], list(LANGUAGES), list(LANGUAGES), max_text_chars=MAX_TEXT_CHARS)
               for name in dict.fromkeys(candidates)]
-    return models, None if models else "No translation models configured; set DUBVIBE_MINI_TRANSLATION_MODELS."
+    return models, None if models else f"No translation models configured; set DUBVIBE_MINI_{env_name}."
 
 
 # Local translation models report subsections of the pipeline languages; a
@@ -266,7 +284,7 @@ def runtime_info() -> dict[str, Any]:
 def probe_capability(adapter: str, *, connections: Sequence[Mapping[str, Any]] = (),
                      translation_model: str | None = None) -> dict[str, Any]:
     """Inspect exactly one installed provider; no inference or network access."""
-    remote_kinds = {"openai": "translation", "gemini": "translation", "custom": "translation", "edge": "tts"}
+    remote_kinds = {"openai": "translation", "gemini": "translation", "codecraft": "translation", "custom": "translation", "edge": "tts"}
     kind = remote_kinds.get(adapter)
     execution = "remote" if adapter in remote_kinds else "local"
     if kind == "translation":

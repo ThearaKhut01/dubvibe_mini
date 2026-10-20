@@ -138,6 +138,10 @@ export default class Tasks extends Service implements TasksService {
       const reusedSteps = reuse ? await this.reusePrefix(request.id, plan, reuse.source, reuse.fromStep, artifacts) : []
       const snapshot = await this.ctx.settings.snapshot()
       const remote = new Set(Object.values(plan.bindings).map(binding => this.ctx.catalog.provider(binding.providerId).describe()).filter(provider => provider.execution === 'remote').map(provider => provider.adapter ?? provider.id))
+      // Automatic translation fallback may try any configured remote
+      // translation provider, so every one of them rides along in the task
+      // snapshot; unconfigured ones are skipped cheaply at runtime.
+      for (const provider of this.ctx.catalog.describe().providers.filter(item => item.capability === 'translation' && item.execution === 'remote')) remote.add(provider.adapter ?? provider.id)
       const connections = snapshot.connections.filter(connection => remote.has(connection.adapter))
       const credentialRefs = Object.fromEntries(Object.entries(snapshot.credentialRefs).filter(([adapter]) => remote.has(adapter)))
       const timestamp = now()

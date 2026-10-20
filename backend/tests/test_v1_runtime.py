@@ -141,16 +141,20 @@ def test_translation_models_use_configured_candidates_and_preserve_saved_default
     assert "DUBVIBE_MINI_TRANSLATION_MODELS" in capability["unavailable_reason"]
 
 
-def test_custom_remote_adapter_matches_only_its_own_connection(installed_runtime, monkeypatch):
+def test_remote_translation_adapters_match_only_their_own_connection(installed_runtime, monkeypatch):
+    for name in ("YOUDUB_GEMINI_MODELS", "YOUDUB_CODECRAFT_MODELS", "YOUDUB_TRANSLATION_MODELS",
+                 "DUBVIBE_MINI_GEMINI_MODELS", "DUBVIBE_MINI_CODECRAFT_MODELS", "DUBVIBE_MINI_TRANSLATION_MODELS"):
+        monkeypatch.delenv(name, raising=False)
     connections = [
         {"adapter": "gemini", "base_url": "https://gemini.example/v1beta/openai/", "has_api_key": True},
+        {"adapter": "codecraft", "base_url": "https://craft.example/v1", "has_api_key": True},
         {"adapter": "custom", "base_url": "https://gateway.example/v1", "has_api_key": True},
     ]
-    for adapter in ("gemini", "custom"):
+    for adapter, model in (("gemini", "gemini-2.5-flash"), ("codecraft", "gpt-5.6-luna"), ("custom", "gpt-4.1-mini")):
         result = runtime.probe_capability(adapter, connections=connections)
         assert result["available"] and result["execution"] == "remote" and result["requires_api_key"] is True
         assert result["data_sent"] == ["text"]
-        assert [item["id"] for item in result["models"]] == ["gpt-4.1-mini"]
+        assert [item["id"] for item in result["models"]] == [model]
     # An adapter's readiness must never borrow another adapter's connection.
     result = runtime.probe_capability("openai", connections=connections)
     assert not result["available"] and result["unavailable_reason"] == "Provider connection is not configured."

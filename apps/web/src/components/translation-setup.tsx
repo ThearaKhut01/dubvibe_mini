@@ -9,10 +9,11 @@ import { Label } from './ui/label'
 import type { Runtime, TaskConfig } from '@/plugin/builtin/localize-contracts'
 
 type Settings = { connections: { adapter: string; base_url: string; has_api_key: boolean }[]; defaults?: TaskConfig | null; plugins?: Record<string, { translationDeferred?: boolean }> }
-const PROVIDERS: { id: string; label: string; url: string }[] = [
-  { id: 'openai', label: 'OpenAI', url: 'https://api.openai.com/v1' },
-  { id: 'gemini', label: 'Google Gemini', url: 'https://generativelanguage.googleapis.com/v1beta/openai/' },
-  { id: 'custom', label: 'Custom API', url: '' },
+const PROVIDERS: { id: string; label: string; url: string; modelHint: string }[] = [
+  { id: 'openai', label: 'OpenAI', url: 'https://api.openai.com/v1', modelHint: 'gpt-4.1-mini' },
+  { id: 'gemini', label: 'Google Gemini', url: 'https://generativelanguage.googleapis.com/v1beta/openai/', modelHint: 'gemini-2.5-flash' },
+  { id: 'codecraft', label: 'CodeCraft API', url: 'https://codecraftapi.com/v1', modelHint: 'gpt-4.1-mini' },
+  { id: 'custom', label: 'Custom API', url: '', modelHint: 'gpt-4.1-mini' },
 ]
 async function api(path: string, init?: RequestInit) {
   const response = await fetch(path, { ...init, credentials: 'same-origin', cache: 'no-store' })
@@ -96,7 +97,7 @@ export function TranslationSetup({ children }: { children: ReactNode }) {
     <form className="space-y-5 rounded-2xl border border-border bg-card p-6" onSubmit={save}>
       <div className="space-y-2">
         <Label>Provider</Label>
-        <div role="radiogroup" aria-label="Provider" className="grid gap-2 sm:grid-cols-3">
+        <div role="radiogroup" aria-label="Provider" className="grid gap-2 sm:grid-cols-4">
           {PROVIDERS.map(provider => (
             <label key={provider.id} className={`cursor-pointer rounded-lg border px-3 py-2 text-sm transition-colors ${providerId === provider.id ? 'border-primary bg-primary/5 font-medium' : 'border-border text-muted-foreground hover:border-muted-foreground'}`}>
               <input type="radio" name="provider" value={provider.id} className="sr-only" checked={providerId === provider.id} disabled={busy} onChange={() => { setProviderId(provider.id); setUrl(provider.url) }} />
@@ -104,10 +105,11 @@ export function TranslationSetup({ children }: { children: ReactNode }) {
             </label>
           ))}
         </div>
+        {providerId === 'codecraft' && <p className="text-xs text-muted-foreground">Aggregator gateway: one key for many models (OpenAI chat-compatible).</p>}
         {providerId === 'custom' && <p className="text-xs text-muted-foreground">Any OpenAI-compatible service: OpenRouter, OneAPI, LM Studio, or your own gateway.</p>}
       </div>
-      <div className="space-y-2"><Label htmlFor="setup-llm-url">Endpoint URL</Label><Input id="setup-llm-url" type="url" value={url} disabled={busy} placeholder={providerId === 'custom' ? 'https://your-service.example/v1' : undefined} onChange={event => setUrl(event.target.value)} required /></div>
-      <div className="space-y-2"><Label htmlFor="setup-llm-model">Model name</Label><Input id="setup-llm-model" value={model} disabled={busy} onChange={event => setModel(event.target.value)} placeholder="For example gpt-4.1-mini" required /></div>
+      <div className="space-y-2"><Label htmlFor="setup-llm-url">Endpoint URL</Label>{PROVIDERS.find(provider => provider.id === providerId)?.url ? <p className="break-all font-mono text-xs text-muted-foreground">{url}</p> : <Input id="setup-llm-url" type="url" value={url} disabled={busy} placeholder="https://your-service.example/v1" onChange={event => setUrl(event.target.value)} required />}</div>
+      <div className="space-y-2"><Label htmlFor="setup-llm-model">Model name</Label><Input id="setup-llm-model" value={model} disabled={busy} onChange={event => setModel(event.target.value)} placeholder={`For example ${PROVIDERS.find(provider => provider.id === providerId)?.modelHint ?? 'gpt-4.1-mini'}`} required /></div>
       <div className="space-y-2"><Label htmlFor="setup-llm-key">API key{savedKey ? ' · Saved' : ''}</Label><Input id="setup-llm-key" type="password" autoComplete="new-password" value={key} disabled={busy} onChange={event => setKey(event.target.value)} required={!savedKey} placeholder={savedKey ? 'Leave blank to keep the saved key' : ''} /><p className="text-xs text-muted-foreground">The key is stored in the system credential manager and can be changed in Settings.</p></div>
       {error && <p role="alert" className="text-sm text-status-danger-fg">{error}</p>}
       <div className="flex flex-wrap gap-3"><Button type="submit" disabled={busy}>{busy && <Loader2 className="animate-spin" />}Test connection and continue</Button><Button type="button" variant="ghost" disabled={busy} onClick={() => void skip()}>Configure later</Button></div>
