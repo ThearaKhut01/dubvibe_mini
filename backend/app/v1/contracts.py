@@ -114,11 +114,16 @@ class ConnectionPatch(Contract):
     # An absent base_url is allowed; an explicitly null base_url is rejected.
     base_url: BaseUrl = Field(default=None)
     api_key: Annotated[SecretStr, Field(min_length=1)] | None = None
+    # remove=true drops the saved connection (and its key) for the adapter;
+    # it must not be mixed with new URL or key values.
+    remove: bool = Field(default=None)
 
     @model_validator(mode="after")
     def require_change(self) -> Self:
-        if not self.model_fields_set.intersection({"base_url", "api_key"}):
-            raise ValueError("a connection update requires base_url or api_key")
+        if not self.model_fields_set.intersection({"base_url", "api_key", "remove"}):
+            raise ValueError("a connection update requires base_url, api_key, or remove")
+        if self.remove and {"base_url", "api_key"} & self.model_fields_set:
+            raise ValueError("remove cannot be combined with a base URL or an API key")
         return self
 
 

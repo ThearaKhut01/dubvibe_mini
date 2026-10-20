@@ -42,6 +42,21 @@ class Bridge:
             update = validated.connection
             connections = self.store.settings_values().get("connections", [])
             old = next((item for item in connections if item["adapter"] == update.adapter), None)
+            if update.remove:
+                changed = False
+                try:
+                    previous = (old or {}).get("credential_ref")
+                    if previous and not self.store.credential_pinned(previous):
+                        self.credentials.delete(previous)
+                        changed = True
+                    connections = [item for item in connections if item["adapter"] != update.adapter]
+                    self.store.write_setting("connections", connections)
+                except Exception as exc:
+                    if changed:
+                        raise WorkerError("SETTINGS_PARTIALLY_APPLIED", "Credentials changed before the remaining settings operation failed.",
+                                          {"cause": type(exc).__name__, "message": str(exc)}) from exc
+                    raise
+                return self.settings()
             base = str(update.base_url) if "base_url" in update.model_fields_set else (old or {}).get("base_url")
             if not base:
                 raise WorkerError("INVALID_CONFIG", "A new connection requires a base URL.")

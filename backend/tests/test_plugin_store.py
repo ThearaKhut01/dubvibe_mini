@@ -208,6 +208,27 @@ def test_settings_connection_omission_rotation_clear_and_address_binding(tmp_pat
         assert "secret" not in "\n".join(conn.iterdump())
 
 
+def test_settings_connection_remove_drops_the_entry_and_unpinned_key(tmp_path):
+    credentials = Credentials()
+    bridge = Bridge(tmp_path, credentials=credentials)
+    bridge.call("settings.patch", {"patch": {"connection": {"adapter": "openai", "base_url": "https://example.test/v1", "api_key": "first-key"}}})
+    ref = bridge.call("settings.raw", {})["connections"][0]["credential_ref"]
+    result = bridge.call("settings.patch", {"patch": {"connection": {"adapter": "openai", "remove": True}}})
+    assert result["connections"] == []
+    assert ref not in credentials.values
+
+
+def test_settings_connection_remove_keeps_a_pinned_credential_secret(tmp_path):
+    credentials = Credentials()
+    bridge = Bridge(tmp_path, credentials=credentials)
+    bridge.call("settings.patch", {"patch": {"connection": {"adapter": "openai", "base_url": "https://example.test/v1", "api_key": "first-key"}}})
+    ref = bridge.call("settings.raw", {})["connections"][0]["credential_ref"]
+    bridge.store.create(task(credentialRefs={"openai": ref}))
+    result = bridge.call("settings.patch", {"patch": {"connection": {"adapter": "openai", "remove": True}}})
+    assert result["connections"] == []
+    assert credentials.get(ref) == "first-key"
+
+
 def test_settings_failures_are_visible_before_and_after_credential_write(tmp_path, monkeypatch):
     from backend.app.v1.credentials import CredentialStoreError
     credentials = Credentials()

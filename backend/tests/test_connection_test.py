@@ -70,20 +70,26 @@ def test_invalid_output_limit_stops_before_call(bridge, monkeypatch):
         check_connection({'base_url': 'https://example.test/v1', 'model': 'test', 'api_key': 'secret'}, bridge)
 
 
-def test_default_model_matches_the_service_behind_the_url(monkeypatch):
-    monkeypatch.delenv('DUBVIBE_MINI_GEMINI_MODELS', raising=False)
-    monkeypatch.delenv('DUBVIBE_MINI_CODECRAFT_MODELS', raising=False)
+def test_default_models_match_the_service_behind_the_url(monkeypatch):
+    for name in ("DUBVIBE_MINI_GEMINI_MODELS", "DUBVIBE_MINI_CODECRAFT_MODELS", "DUBVIBE_MINI_TRANSLATION_MODELS",
+                 "YOUDUB_GEMINI_MODELS", "YOUDUB_CODECRAFT_MODELS", "YOUDUB_TRANSLATION_MODELS"):
+        monkeypatch.delenv(name, raising=False)
+    from backend.app.v1.connection_test import default_models
+    # The generic OpenAI default answers HTTP 404 on Google and on aggregators:
+    # each known service gets its own candidates and the test walks them on 404.
+    assert default_models('https://api.openai.com/v1') == ['gpt-4.1-mini']
+    assert default_models('https://generativelanguage.googleapis.com/v1beta/openai/') == ['gemini-2.5-flash', 'gemini-2.5-flash-lite']
+    assert default_models('https://codecraftapi.com/v1') == ['gpt-5.6-luna', 'gpt-4.1-mini']
+    assert default_models('https://gateway.example/v1') == ['gpt-4.1-mini']
+
+
+def test_default_model_candidates_respect_configured_env(monkeypatch):
+    monkeypatch.setenv('DUBVIBE_MINI_GEMINI_MODELS', ' reduced-one , reduced-two , ')
     monkeypatch.delenv('DUBVIBE_MINI_TRANSLATION_MODELS', raising=False)
     monkeypatch.delenv('YOUDUB_GEMINI_MODELS', raising=False)
-    monkeypatch.delenv('YOUDUB_CODECRAFT_MODELS', raising=False)
     monkeypatch.delenv('YOUDUB_TRANSLATION_MODELS', raising=False)
-    from backend.app.v1.connection_test import default_model
-    # The generic OpenAI default answers HTTP 404 on Google and on aggregators:
-    # each known service gets its own default model id.
-    assert default_model('https://api.openai.com/v1') == 'gpt-4.1-mini'
-    assert default_model('https://generativelanguage.googleapis.com/v1beta/openai/') == 'gemini-2.5-flash'
-    assert default_model('https://codecraftapi.com/v1') == 'gpt-5.6-luna'
-    assert default_model('https://gateway.example/v1') == 'gpt-4.1-mini'
+    from backend.app.v1.connection_test import default_models
+    assert default_models('https://generativelanguage.googleapis.com/v1beta/openai/') == ['reduced-one', 'reduced-two']
 
 
 def test_model_not_found_suggests_the_service_provides_other_ids(bridge, monkeypatch):
@@ -98,3 +104,36 @@ def test_model_not_found_suggests_the_service_provides_other_ids(bridge, monkeyp
     assert 'does not exist on this service' in str(result.value)
     assert 'no-such-model' in str(result.value)
     assert 'secret' not in str(result.value)
+
+
+def test_model_not_found_walks_the_service_default_candidates(bridge, monkeypatch):
+    monkeypatch.delenv('DUBVIBE_MINI_GEMINI_MODELS', raising=False)
+    monkeypatch.delenv('YOUDUB_GEMINI_MODELS', raising=False)
+    client = Mock()
+    client.__enter__ = Mock(return_value=client)
+    client.__exit__ = Mock(return_value=False)
+    ok = NS(choices=[NS(message=NS(content='OK'))])
+    responses = iter([openai.APIStatusError('gone', response=httpx.Response(404, request=httpx.Request('POST', 'u')), body=None), ok])
+    def create(model=None, **kwargs):
+        item = next(responses)
+        if isinstance(item, BaseException): raise item
+        return item
+    client.chat.completions.create.side_effect = create
+    monkeypatch.setattr(openai, 'OpenAI', lambda **kwargs: client)
+    assert check_connection({'base_url': 'https://generativelanguage.googleapis.com/v1beta/openai', 'api_key': 'secret'}, bridge) == {'ok': True}
+    models = [call.kwargs['model'] for call in client.chat.completions.create.call_args_list]
+    assert models == ['gemini-2.5-flash', 'gemini-2.5-flash-lite']
+
+
+def test_all_default_candidates_reported_when_every_model_404s(bridge, monkeypatch):
+    monkeypatch.delenv('DUBVIBE_MINI_GEMINI_MODELS', raising=False)
+    monkeypatch.delenv('YOUDUB_GEMINI_MODELS', raising=False)
+    client = Mock()
+    client.__enter__ = Mock(return_value=client)
+    client.__exit__ = Mock(return_value=False)
+    client.chat.completions.create.side_effect = openai.APIStatusError('no such model',
+        response=httpx.Response(404, request=httpx.Request('POST', 'u')), body=None)
+    monkeypatch.setattr(openai, 'OpenAI', lambda **kwargs: client)
+    with pytest.raises(WorkerError, match='HTTP 404') as result:
+        check_connection({'base_url': 'https://generativelanguage.googleapis.com/v1beta/openai', 'api_key': 'secret'}, bridge)
+    assert 'Models tried: "gemini-2.5-flash", "gemini-2.5-flash-lite"' in str(result.value)

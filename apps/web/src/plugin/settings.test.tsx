@@ -124,6 +124,30 @@ it('offers a CodeCraft API card with a fixed endpoint and a key-only connect', a
   expect(patch.connection).toEqual({ adapter: 'codecraft', base_url: 'https://codecraftapi.com/v1', api_key: 'cc-key' })
 })
 
+it('removes a saved connection from its card and resets the form', async () => {
+  const request = vi.fn(async (path: string, init?: RequestInit) => {
+    if (init?.method === 'PATCH') return {}
+    if (path === '/api/v2/settings') return { connections: [{ adapter: 'codecraft', base_url: 'https://codecraftapi.com/v1', has_api_key: true }] }
+    if (path === '/api/v2/catalog') return { workflows: [], providers: [
+      { id: 'codecraft', adapter: 'codecraft', label: 'CodeCraft API', operations: [], execution: 'remote', available: true, requires_api_key: true, models: [{ id: 'gpt-5.6-luna', devices: ['remote'] }] },
+    ] }
+    return { items: [] }
+  })
+  let Page!: ComponentType<RouteProps>
+  const context = { apiClient: { request }, slots: {
+    register: (slot: string, entry: SlotMap['shell.routes']) => { if (slot === 'shell.routes') Page = entry.component; return () => {} }, subscribe: () => () => {}, getSnapshot: () => 0, list: () => [],
+  }, effect: (effect: () => unknown) => effect() } as unknown as Context
+  apply(context)
+  render(<PluginContextProvider context={context}><ThemeProvider><LanguageProvider><Page params={{}} /></LanguageProvider></ThemeProvider></PluginContextProvider>)
+  await screen.findAllByText('CodeCraft API')
+  const card = screen.getAllByText('CodeCraft API').map(node => node.closest('form')).find(Boolean) as HTMLElement
+  await screen.findByText('Connected')
+  const user = userEvent.setup()
+  await user.click(within(card).getByRole('button', { name: 'Remove' }))
+  const patch = JSON.parse(request.mock.calls.find(([path, init]) => path === '/api/v2/settings' && init?.method === 'PATCH')![1]!.body as string)
+  expect(patch.connection).toEqual({ adapter: 'codecraft', remove: true })
+})
+
 it('probes runtime before refreshing its catalog, serializes clicks and surfaces probe failures without retrying', async () => {
   let finish!: (value: unknown) => void
   let fail!: (error: Error) => void

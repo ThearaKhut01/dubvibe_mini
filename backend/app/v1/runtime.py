@@ -97,8 +97,8 @@ TRANSLATION_ADAPTERS = ("openai", "gemini", "codecraft", "custom")
 # DUBVIBE_MINI_* (legacy YOUDUB_* aliases accepted).
 TRANSLATION_MODEL_DEFAULTS = {
     "openai": ("TRANSLATION_MODELS", "gpt-4.1-mini"),
-    "gemini": ("GEMINI_MODELS", "gemini-2.5-flash"),
-    "codecraft": ("CODECRAFT_MODELS", "gpt-5.6-luna"),
+    "gemini": ("GEMINI_MODELS", "gemini-2.5-flash, gemini-2.5-flash-lite"),
+    "codecraft": ("CODECRAFT_MODELS", "gpt-5.6-luna, gpt-4.1-mini"),
     "custom": ("TRANSLATION_MODELS", "gpt-4.1-mini"),
 }
 

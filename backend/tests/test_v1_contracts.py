@@ -98,6 +98,17 @@ def test_api_key_preserve_replace_clear_are_distinct():
     assert clear.model_dump(exclude_unset=True) == {"adapter": "demo", "api_key": None}
 
 
+def test_connection_remove_is_a_standalone_action():
+    remove = ConnectionPatch(adapter="demo", remove=True)
+    assert remove.model_dump(exclude_unset=True) == {"adapter": "demo", "remove": True}
+    with pytest.raises(ValidationError):
+        ConnectionPatch(adapter="demo", remove=True, base_url="http://localhost:8080/v1")
+    with pytest.raises(ValidationError):
+        ConnectionPatch(adapter="demo", remove=True, api_key="a-real-secret")
+    with pytest.raises(ValidationError):
+        ConnectionPatch(adapter="demo")  # no change at all is still rejected
+
+
 @pytest.mark.parametrize(
     "url",
     [
