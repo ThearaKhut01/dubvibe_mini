@@ -68,7 +68,8 @@ def provider(monkeypatch):
                 raise state.error
             segments = json.loads(kwargs["messages"][1]["content"])["segments"]
             # Provider order may differ; identity must still align exactly.
-            result = {"segments": [{"segment_id": segment["segment_id"], "text": "译文 " + segment["text"]}
+            result = {"segments": [{"segment_id": segment["segment_id"],
+                                    "text": "译文 " + (segment.get("text") or segment.get("draft", ""))}
                                    for segment in reversed(segments)]}
             if state.mutate:
                 state.mutate(result)
