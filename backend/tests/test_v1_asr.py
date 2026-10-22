@@ -261,7 +261,6 @@ def test_invalid_standard_word_metadata_is_rejected(words):
     lambda result: result["segments"][0].update(end=10 ** 500),
     lambda result: result["segments"][0].update(end=0.123),
     lambda result: result["segments"][0].update(end=3.1),
-    lambda result: result["segments"][0].update(text=" \n"),
     lambda result: result["segments"][0].update(speaker_id=2),
 ])
 def test_invalid_results_are_explicit_errors_without_retiming(raw_result, change):
@@ -269,6 +268,25 @@ def test_invalid_results_are_explicit_errors_without_retiming(raw_result, change
     with pytest.raises(ApiError) as error:
         asr.normalize_result(raw_result, duration_ms=3000)
     assert error.value.content["error"]["code"] == "INVALID_PROVIDER_RESULT"
+
+
+def test_blank_and_punctuation_only_segments_are_skipped():
+    raw = {"language": "zh", "segments": [
+        {"start": 0, "end": 1, "text": "第一句。"},
+        {"start": 1, "end": 2, "text": " \n"},
+        {"start": 2, "end": 3, "text": "，，。"},
+        {"start": 3, "end": 4, "text": "第二句。"},
+    ]}
+    normalized = asr.normalize_result(raw, duration_ms=4000)
+    assert [(segment["id"], segment["text"]) for segment in normalized["segments"]] == [
+        ("segment-000001", "第一句。"), ("segment-000002", "第二句。"),
+    ]
+
+
+def test_a_result_with_only_blank_segments_reports_no_speech():
+    raw = {"language": "zh", "segments": [{"start": 0, "end": 1, "text": "  "}]}
+    with pytest.raises(ApiError, match="any speech segments"):
+        asr.normalize_result(raw, duration_ms=1000)
 
 
 def test_run_passes_config_checkpoint_and_vocals_and_keeps_full_raw_result(context, raw_result, monkeypatch):

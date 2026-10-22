@@ -120,8 +120,13 @@ def normalize_result(result: Any, *, duration_ms: int) -> dict:
         raise _invalid("Whisper did not return any speech segments.")
     segments = []
     for raw in raw_segments:
-        if not isinstance(raw, dict) or not isinstance(raw.get("text"), str) or not raw["text"].strip():
+        if not isinstance(raw, dict) or not isinstance(raw.get("text"), str):
             raise _invalid("Whisper returned an empty or invalid speech segment.")
+        # Whisper emits blank (or punctuation-only) segments over silence and
+        # music. They contain no speech, so skip them instead of failing a long
+        # recording because of one empty window.
+        if not any(character.isalnum() for character in raw["text"]):
+            continue
         start_ms, end_ms = _milliseconds(raw.get("start")), _milliseconds(raw.get("end"))
         if end_ms <= start_ms or end_ms > duration_ms:
             raise _invalid("Whisper returned a segment outside the source media timeline.")
@@ -142,6 +147,8 @@ def normalize_result(result: Any, *, duration_ms: int) -> dict:
             except (KeyError, TypeError) as exc:
                 raise _invalid("Whisper returned invalid word timestamps.") from exc
         segments.append(segment)
+    if not segments:
+        raise _invalid("Whisper did not return any speech segments.")
     try:
         transcript = Transcript.model_validate({"detected_language": language, "segments": segments})
         if language == "en":
