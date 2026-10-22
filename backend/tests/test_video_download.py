@@ -2,6 +2,7 @@ from urllib.request import Request
 
 import pytest
 import yt_dlp
+from backend.app.v1.runtime import RUNTIME_LIMITS
 from backend.workers.download import video_url, VideoRedirect, download_video
 from backend.workers.protocol import WorkerError
 
@@ -34,7 +35,7 @@ def test_download_failure_never_returns_an_artifact(tmp_path, monkeypatch, mode)
         def __exit__(self, *_): pass
         def extract_info(self, *_args, **_kwargs):
             if mode == 'network': raise original
-            if mode == 'duration': self.options['match_filter']({'duration': 601})
+            if mode == 'duration': self.options['match_filter']({'duration': RUNTIME_LIMITS['max_video_duration_ms'] // 1000 + 1})
             if mode == 'size': self.options['progress_hooks'][0]({'downloaded_bytes': 101})
             pytest.fail('Rejected download continued')
     class Cancelled(Wire):

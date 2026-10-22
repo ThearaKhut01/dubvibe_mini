@@ -74,7 +74,8 @@ def download_video(url: str, work: Path, wire, max_bytes: int) -> tuple[Path, di
         if info.get("is_live") or info.get("live_status") == "is_upcoming":
             raise WorkerError("UNSUPPORTED_MEDIA", "Live or not-yet-published videos are not supported.")
         if (info.get("duration") or 0) * 1000 > RUNTIME_LIMITS["max_video_duration_ms"]:
-            raise WorkerError("MEDIA_LIMIT_EXCEEDED", "The video exceeds the 10 minute limit.")
+            minutes = RUNTIME_LIMITS["max_video_duration_ms"] // 60_000
+            raise WorkerError("MEDIA_LIMIT_EXCEEDED", f"The video exceeds the {minutes:g} minute limit.")
         if (info.get("filesize") or 0) > max_bytes:
             raise WorkerError("FILE_TOO_LARGE", "The video exceeds the file size limit.")
 

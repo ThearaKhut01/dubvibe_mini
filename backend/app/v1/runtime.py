@@ -20,10 +20,26 @@ from .segments import LANGUAGES
 
 INSTANCE_ID = str(uuid4())
 
+
+def _max_video_duration_ms() -> int:
+    """Long videos are allowed; the ceiling only stops runaway multi-hour jobs.
+
+    Override with DUBVIBE_MINI_MAX_VIDEO_MINUTES (or YOUDUB_...). Invalid or
+    non-positive values fall back to the 60-minute default.
+    """
+    try:
+        minutes = float(env("MAX_VIDEO_MINUTES", "60"))
+    except ValueError:
+        return 60 * 60_000
+    if minutes <= 0:
+        return 60 * 60_000
+    return min(int(minutes * 60_000), 24 * 60 * 60_000)
+
+
 # Media admission limits shared by the official prepare operation and Host.
 RUNTIME_LIMITS: dict[str, Any] = {
     "max_file_bytes": 4 * 1024 * 1024 * 1024,
-    "max_video_duration_ms": 600_000,
+    "max_video_duration_ms": _max_video_duration_ms(),
     "max_video_width": 1920,
     "max_video_height": 1920,
     "max_frame_rate": 60,

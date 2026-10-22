@@ -1,4 +1,4 @@
-from __future__ import annotations
+﻿from __future__ import annotations
 
 import sys
 from copy import deepcopy
@@ -110,7 +110,7 @@ def test_real_catalogue_reads_local_metadata_and_remote_config_without_model_or_
     assert whisper["models"][0]["source_languages"] == ["auto", "en", "zh", "ja", "km"]
     assert whisper["models"][1]["source_languages"] == ["auto", "en"]
     assert all(model["devices"] == ["cpu", "cuda:0"] for model in whisper["models"])
-    assert all(model["input_limits"] == {"max_audio_duration_ms": 600000,
+    assert all(model["input_limits"] == {"max_audio_duration_ms": 3600000,
                                          "max_text_chars": None, "max_reference_duration_ms": None}
                for model in whisper["models"])
     assert whisper["data_sent"] == [] and whisper["remote_operations"] is None
@@ -269,7 +269,7 @@ def test_all_capabilities_ready_reads_assets_without_loading_models_or_network(a
     assert separation["models"] == [{
         "id": "htdemucs", "devices": ["cpu", "cuda:0"], "source_languages": [], "target_languages": [],
         "voice_modes": [], "voices": [],
-        "input_limits": {"max_audio_duration_ms": 600000, "max_text_chars": None, "max_reference_duration_ms": None},
+        "input_limits": {"max_audio_duration_ms": 3600000, "max_text_chars": None, "max_reference_duration_ms": None},
     }]
     assert all(item["data_sent"] == [] and item["remote_operations"] is None and not item["requires_api_key"]
                for item in (tts_capability, separation))
@@ -466,3 +466,21 @@ def test_local_translation_dependencies_are_reported_per_adapter(installed_runti
         capability = runtime.probe_capability(adapter)
         assert not capability["available"] and capability["models"] == []
         assert missing in capability["unavailable_reason"]
+
+
+def test_video_duration_limit_defaults_to_sixty_minutes_with_env_override(monkeypatch):
+    monkeypatch.delenv("DUBVIBE_MINI_MAX_VIDEO_MINUTES", raising=False)
+    monkeypatch.delenv("YOUDUB_MAX_VIDEO_MINUTES", raising=False)
+    assert runtime._max_video_duration_ms() == 60 * 60_000
+    monkeypatch.setenv("DUBVIBE_MINI_MAX_VIDEO_MINUTES", "120")
+    assert runtime._max_video_duration_ms() == 120 * 60_000
+    monkeypatch.delenv("DUBVIBE_MINI_MAX_VIDEO_MINUTES")
+    monkeypatch.setenv("YOUDUB_MAX_VIDEO_MINUTES", "17.5")
+    assert runtime._max_video_duration_ms() == 1_050_000
+    monkeypatch.setenv("YOUDUB_MAX_VIDEO_MINUTES", "0")
+    assert runtime._max_video_duration_ms() == 60 * 60_000
+    monkeypatch.setenv("YOUDUB_MAX_VIDEO_MINUTES", "not-a-number")
+    assert runtime._max_video_duration_ms() == 60 * 60_000
+    monkeypatch.setenv("YOUDUB_MAX_VIDEO_MINUTES", "100000")
+    assert runtime._max_video_duration_ms() == 24 * 60 * 60_000
+
