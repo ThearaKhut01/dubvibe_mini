@@ -1,14 +1,14 @@
 "use client"
 
 import { useState, type ReactNode } from "react"
-import { ArrowRightLeft, AudioWaveform, Captions, Clapperboard, Languages, Mic, Speech, type LucideIcon } from "lucide-react"
+import { ArrowRightLeft, AudioWaveform, Captions, Clapperboard, Languages, Mic, Scissors, Speech, type LucideIcon } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Segmented } from "@/components/ui/segmented"
 import { Select, SelectContent, SelectItem, SelectTrigger } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { cn } from "@/lib/utils"
-import type { Capability, ModelCapability, ModelSelection, Runtime, TaskConfig, TtsSelection } from "@/plugin/builtin/localize-contracts"
+import type { Capability, ModelCapability, ModelSelection, Runtime, TaskConfig, TrimRange, TtsSelection } from "@/plugin/builtin/localize-contracts"
 import { useText, type Text } from "@/lib/i18n"
 
 const OUTPUT_LABELS: Record<TaskConfig["output_mode"], [string, string, string?]> = {
@@ -104,7 +104,7 @@ function defaultTargetLanguage() {
 export function initialTaskConfig(runtime: Runtime, defaults?: Partial<TaskConfig> | null): TaskConfig {
   return {
     source_language: "auto", target_language: defaultTargetLanguage(), output_mode: "subtitles", keep_background: false,
-    tts: null, separation: null, subtitle_alignment: null,
+    tts: null, separation: null, subtitle_alignment: null, trim: null,
     ...defaults,
     asr: defaults?.asr ?? firstSelection(runtime, "asr"),
     translation: defaults?.translation ?? firstSelection(runtime, "translation"),
@@ -149,7 +149,7 @@ export function TaskOptions({ value, runtime, onChange }: {
       </SelectTrigger>
       <SelectContent>{field.options.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
     </Select>
-  ))}{fields.some((field) => field.hint) && <p className="text-xs text-status-warning-fg">{fields.find((field) => field.hint)!.hint}</p>}</div>
+  ))}<TrimFields value={value.trim ?? null} onChange={(trim) => change({ trim })} compact />{fields.some((field) => field.hint) && <p className="text-xs text-status-warning-fg">{fields.find((field) => field.hint)!.hint}</p>}</div>
 }
 
 const ADAPTER_NAMES: Record<string, [string, string, string?]> = {
@@ -270,6 +270,56 @@ function LanguageField({ id, caption, value, options, onChange }: {
   </Field>
 }
 
+const WHOLE_VIDEO = "whole"
+const CLIP_MINUTES = Array.from({ length: 60 }, (_, index) => index + 1)
+
+// Optional clip: the source is cut before recognition/translation, so a long
+// upload can be previewed or dubbed in small, cheap pieces.
+function TrimFields({ value, onChange, compact = false }: {
+  value: TrimRange | null; onChange: (value: TrimRange | null) => void; compact?: boolean
+}) {
+  const text = useText()
+  const length = value ? Math.round((value.end_ms - value.start_ms) / 60_000) : null
+  const start = value ? Math.round(value.start_ms / 60_000) : 0
+  const lengthOptions = [
+    { value: WHOLE_VIDEO, label: text("Whole video", "完整视频", "វីដេអូទាំងមូល") },
+    ...CLIP_MINUTES.map((minutes) => ({ value: String(minutes), label: `${minutes} ${text("min", "分钟", "នាទី")}` })),
+  ]
+  const current = length ? String(length) : WHOLE_VIDEO
+  const setLength = (next: string) => {
+    if (next === WHOLE_VIDEO) { onChange(null); return }
+    const minutes = Number(next)
+    onChange({ start_ms: start * 60_000, end_ms: (start + minutes) * 60_000 })
+  }
+  const setStart = (raw: string) => {
+    if (!length) return
+    const minutes = Math.max(0, Math.min(599, Math.trunc(Number(raw) || 0)))
+    onChange({ start_ms: minutes * 60_000, end_ms: (minutes + length) * 60_000 })
+  }
+  if (compact) return <>
+    <Select value={current} onValueChange={(next) => { if (typeof next === "string") setLength(next) }}>
+      <SelectTrigger aria-label={text("Clip length", "剪辑时长", "រយៈពេលកាត់")} className="inline-flex h-8 w-auto max-w-full gap-1.5 rounded-full border-border bg-muted px-3 text-[13px] shadow-none hover:bg-accent">
+        <Scissors className="size-3.5 text-subtle-foreground" />
+        <span className="text-subtle-foreground">{text("Cut", "剪辑", "កាត់")}</span>
+        <span className="min-w-0 truncate font-medium">{length ? `${length} ${text("min", "分钟", "នាទី")}` : text("Whole video", "完整视频", "វីដេអូទាំងមូល")}</span>
+      </SelectTrigger>
+      <SelectContent>{lengthOptions.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
+    </Select>
+    {length ? <Input aria-label={text("Clip start (minutes)", "剪辑起点（分钟）", "ចំណុចចាប់ផ្តើម (នាទី)")} type="number" min={0} max={599} step={1} value={start}
+      onChange={(event) => setStart(event.target.value)} className="h-8 w-20 rounded-full border-border bg-muted px-3 text-[13px] tabular-nums" /> : null}
+  </>
+  return <>
+    <Field id="clip-length" caption={text("Length", "时长", "រយៈពេល")} srPrefix={text("Clip ", "剪辑", "ការកាត់ ")}>
+      <FieldSelect id="clip-length" value={current} display={lengthOptions.find((option) => option.value === current)?.label ?? null}
+        placeholder={text("Whole video", "完整视频", "វីដេអូទាំងមូល")} options={lengthOptions} onChange={setLength} />
+    </Field>
+    {length ? <Field id="clip-start" caption={text("Start at (minutes)", "起点（分钟）", "ចាប់ផ្តើម (នាទី)")}>
+      <Input id="clip-start" type="number" min={0} max={599} step={1} value={start}
+        onChange={(event) => setStart(event.target.value)} className="tabular-nums" />
+    </Field> : null}
+  </>
+}
+
 export function TaskConfigForm({ value, runtime, onChange }: {
   value: TaskConfig; runtime: Runtime; onChange: (value: TaskConfig) => void
 }) {
@@ -300,6 +350,11 @@ export function TaskConfigForm({ value, runtime, onChange }: {
         <LanguageField id="source-language" caption={text("Source language", "原文语言", "\u1797\u17B6\u179F\u17B6\u1794\u17D2\u179A\u1797\u1796")} value={value.source_language} options={sources} onChange={(source_language) => change({ source_language })} />
         <LanguageField id="target-language" caption={text("Target language", "目标语言", "\u1797\u17B6\u179F\u17B6\u1782\u17C4\u179B\u178A\u17C5")} value={value.target_language} options={targets} onChange={(target_language) => change({ target_language })} />
       </ConfigRow>
+
+    <ConfigRow icon={Scissors} tint="teal" title={text("Clip", "剪辑", "\u1780\u17B6\u179A\u1780\u17B6\u178F\u17CB")}
+      description={text("Process only part of the video. The file is cut before recognition, so long uploads stay fast and cheap.", "只处理视频的一部分。识别前会先剪出这一段，长视频也能又快又省。", "ដំណើរការតែផ្នែកមួយនៃវីដេអូ។ ឯកសារត្រូវកាត់មុនពេលសម្គាល់សំឡេង ដូច្នេះវីដេអូវែងនៅតែលឿន និងសន្សំសំចៃ។")}>
+      <TrimFields value={value.trim ?? null} onChange={(trim) => change({ trim })} />
+    </ConfigRow>
 
     <ConfigRow icon={Mic} tint="blue" title={text("Speech recognition", "语音识别", "\u1780\u17B6\u179A\u179F\u1798\u17D2\u1782\u17B6\u179B\u17CB\u179F\u17C6\u17A1\u17C1\u1784")}
       description={text("Turns speech into text. Name hints help with people and brands.", "把语音转成文字，专名提示能让人名、品牌名更准确。", "បំលែងសំឡេងទៅជាអត្ថបទ។ ការបំភ័័តឈ្មោះ ជួយឱ្យឈ្មោះមនុស្ស និងម៉ាក់ ភ្ជាប់បានត្រឹមត្រូវ។")}>

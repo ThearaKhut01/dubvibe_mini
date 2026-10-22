@@ -94,7 +94,7 @@ it("主页只显示三个基础选项，切换输出后保留设置中的模型�
     return <TaskOptions value={value} runtime={runtime} onChange={(next) => { setValue(next); changed(next) }} />
   }
   render(<LanguageProvider><Options /></LanguageProvider>)
-  expect(screen.getAllByRole('combobox')).toHaveLength(3)
+  expect(screen.getAllByRole('combobox')).toHaveLength(4)
   expect(screen.queryByLabelText('Voice Model')).not.toBeInTheDocument()
   expect(screen.queryByLabelText('Proper-name hint (optional)')).not.toBeInTheDocument()
   const user = userEvent.setup()
@@ -108,8 +108,29 @@ it("主页只显示三个基础选项，切换输出后保留设置中的模型�
 
 it("首次配置允许空模型目录，已有模型选择不会被替换", () => {
   const runtime = testRuntime()
-  expect(initialTaskConfig(runtime, testConfig)).toEqual({ subtitle_alignment: null, ...testConfig })
+  expect(initialTaskConfig(runtime, testConfig)).toEqual({ subtitle_alignment: null, trim: null, ...testConfig })
   expect(initialTaskConfig({ devices: [], capabilities: [] })).toMatchObject({ asr: { adapter: '', model: '', device: 'cpu' }, translation: { adapter: '', model: '', device: 'cpu' } })
+})
+
+it("首页可以只剪辑开头的一段视频再处理", async () => {
+  const changed = vi.fn()
+  function Options() {
+    const [value, setValue] = useState(testConfig)
+    return <TaskOptions value={value} runtime={testRuntime()} onChange={(next) => { setValue(next); changed(next) }} />
+  }
+  render(<LanguageProvider><Options /></LanguageProvider>)
+  const user = userEvent.setup()
+  expect(screen.getByLabelText('Clip length')).toBeInTheDocument()
+  await user.click(screen.getByLabelText('Clip length'))
+  await user.click(await screen.findByRole('option', { name: '5 min' }))
+  expect(changed.mock.calls.at(-1)![0]).toMatchObject({ trim: { start_ms: 0, end_ms: 300_000 } })
+  expect(screen.getByLabelText('Clip start (minutes)')).toHaveValue(0)
+  await user.clear(screen.getByLabelText('Clip start (minutes)'))
+  await user.type(screen.getByLabelText('Clip start (minutes)'), '2')
+  expect(changed.mock.calls.at(-1)![0]).toMatchObject({ trim: { start_ms: 120_000, end_ms: 420_000 } })
+  await user.click(screen.getByLabelText('Clip length'))
+  await user.click(await screen.findByRole('option', { name: 'Whole video' }))
+  expect(changed.mock.calls.at(-1)![0]).toMatchObject({ trim: null })
 })
 
 describe("本地化任务配置", () => {

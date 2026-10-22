@@ -51,7 +51,7 @@ class DownloadLog:
     error = debug
 
 
-def download_video(url: str, work: Path, wire, max_bytes: int) -> tuple[Path, dict]:
+def download_video(url: str, work: Path, wire, max_bytes: int, max_duration_ms: int | None = None) -> tuple[Path, dict]:
     from yt_dlp import YoutubeDL
     from yt_dlp.utils.networking import std_headers
     from backend.app.config import ffmpeg_binary
@@ -73,8 +73,8 @@ def download_video(url: str, work: Path, wire, max_bytes: int) -> tuple[Path, di
         wire.check_cancel()
         if info.get("is_live") or info.get("live_status") == "is_upcoming":
             raise WorkerError("UNSUPPORTED_MEDIA", "Live or not-yet-published videos are not supported.")
-        if (info.get("duration") or 0) * 1000 > RUNTIME_LIMITS["max_video_duration_ms"]:
-            minutes = RUNTIME_LIMITS["max_video_duration_ms"] // 60_000
+        if (info.get("duration") or 0) * 1000 > (max_duration_ms or RUNTIME_LIMITS["max_video_duration_ms"]):
+            minutes = (max_duration_ms or RUNTIME_LIMITS["max_video_duration_ms"]) // 60_000
             raise WorkerError("MEDIA_LIMIT_EXCEEDED", f"The video exceeds the {minutes:g} minute limit.")
         if (info.get("filesize") or 0) > max_bytes:
             raise WorkerError("FILE_TOO_LARGE", "The video exceeds the file size limit.")

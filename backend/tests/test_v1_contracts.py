@@ -130,3 +130,14 @@ def test_connection_urls_cannot_carry_secrets_or_non_http_paths(url):
 @pytest.mark.parametrize("url", ["http://127.0.0.1:8000/v1", "http://[::1]:8000/v1", "https://example.org/v1/"])
 def test_http_connection_urls_remain_unmodified(url):
     assert ConnectionPatch(adapter="demo", base_url=url).base_url == url
+
+
+def test_task_config_accepts_an_optional_clip_range(config):
+    assert TaskConfig.model_validate(config).trim is None
+    trimmed = TaskConfig.model_validate(config | {"trim": {"start_ms": 0, "end_ms": 300_000}})
+    assert (trimmed.trim.start_ms, trimmed.trim.end_ms) == (0, 300_000)
+    assert TaskConfig.model_validate(config | {"trim": None}).trim is None
+    for invalid in ({"start_ms": 5000, "end_ms": 5000}, {"start_ms": -1, "end_ms": 1000},
+                    {"start_ms": 0}, {"start_ms": 0, "end_ms": 1000.5}):
+        with pytest.raises(ValidationError):
+            TaskConfig.model_validate(config | {"trim": invalid})

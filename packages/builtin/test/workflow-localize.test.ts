@@ -63,3 +63,48 @@ test('localize config accepts the optional translation fallback chain from saved
   assert.equal(assertValid({ ...base, stranger: 1 }), false)
   assert.ok(validator.errors!.every(error => error.message!.includes('additional properties')))
 })
+
+test('localize cuts the requested clip before prepare and export', async t => {
+  const ctx = new Context()
+  const app = await ctx.plugin(async context => {
+    context.reflect.provide('settings', { read: async () => ({ defaults: null, connections: [] }) })
+    await context.plugin(Catalog)
+    await context.plugin({ inject: ['catalog'], apply(scope) {
+      for (const capability of ['download', 'media', 'asr', 'translation']) {
+        const id = capability === 'media' ? 'youdub.media' : capability === 'download' ? 'youdub.download' : capability
+        scope.effect(() => scope.catalog.registerProvider({
+          id, describe: () => ({ id, label: id, capability, adapter: id, pluginId: id, pluginVersion: '1', integrity: 'test',
+            operations: [], available: true, unavailableReason: null,
+            models: capability === 'media' ? [] : [{ id: 'test', devices: ['cpu'], source_languages: ['en'], target_languages: ['zh'], voice_modes: ['source_clone'] }] }),
+          probe: async () => ({}), execute: async () => { throw new Error('No execution expected') },
+        }))
+      }
+    } })
+    await context.plugin(Localize, { integrity: 'test' })
+  })
+  t.after(() => app.dispose())
+  const workflow = ctx.catalog.workflow('youdub.localize')
+  const select = (adapter: string) => ({ adapter, model: 'test', device: 'cpu' })
+  const base = { source_language: 'en', target_language: 'zh', output_mode: 'subtitles', keep_background: false,
+    asr: select('asr'), translation: select('translation'), tts: null, separation: null }
+  const inputs = { video: { id: 'input-video', schemaId: 'video/mp4/v1' } }
+  const plan = await workflow.plan(inputs, { ...base, trim: { start_ms: 120_000, end_ms: 420_000 } }, ctx.catalog)
+  assert.deepEqual(plan.steps.slice(0, 3).map(step => step.id), ['cut', 'prepare', 'recognize'])
+  assert.equal(plan.steps[0].operation, 'media.cut/v1')
+  assert.deepEqual(plan.steps[0].input, { video: { from: 'task', name: 'video' }, start_ms: 120_000, end_ms: 420_000 })
+  for (const id of ['prepare', 'export']) {
+    assert.deepEqual(plan.steps.find(step => step.id === id)?.input.video, { from: 'step', stepId: 'cut', output: 'video' })
+  }
+  // The same workflow without a clip keeps the original single prepare step.
+  const plain = await workflow.plan(inputs, base, ctx.catalog)
+  assert.equal(plain.steps[0].id, 'prepare')
+  assert.deepEqual(plain.steps[0].input.video, { from: 'task', name: 'video' })
+  // A clip also lifts the download duration gate: only the clip is processed.
+  const linked = { ...base, source_url: 'https://youtu.be/jNQXAC9IVRw', trim: { start_ms: 0, end_ms: 300_000 } }
+  const downloaded = await workflow.plan({}, linked, ctx.catalog)
+  assert.deepEqual(downloaded.steps.slice(0, 3).map(step => step.id), ['download', 'cut', 'prepare'])
+  assert.equal(downloaded.bindings.download.options.maxDurationMs, 86_400_000)
+  const diagnostics = await workflow.validate(inputs, { ...base, trim: { start_ms: 2000, end_ms: 2000 } }, ctx.catalog)
+  assert.deepEqual(diagnostics.map(item => item.field), ['trim'])
+  assert.deepEqual(await workflow.validate(inputs, base, ctx.catalog), [])
+})

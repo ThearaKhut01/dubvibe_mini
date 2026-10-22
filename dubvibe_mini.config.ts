@@ -28,7 +28,7 @@ export default async function composition(): Promise<EntryOptions[]> {
     entry('catalog', 'catalog'), entry('files', 'files', { root }),
     entry('store', 'store', { root, repoRoot, python }), entry('secrets', 'secrets'), entry('settings', 'settings'),
     provider('youdub.download', 'yt-dlp', ['download']),
-    provider('youdub.media', 'FFmpeg / Media', ['prepare', 'reference', 'mix', 'export', 'importSubtitles']),
+    provider('youdub.media', 'FFmpeg / Media', ['cut', 'prepare', 'reference', 'mix', 'export', 'importSubtitles']),
     provider('whisper', 'Whisper', ['recognize'], 'asr'), provider('openai', 'OpenAI compatible', ['translate'], 'translation', 'remote'), provider('gemini', 'Google Gemini', ['translate'], 'translation', 'remote'), provider('codecraft', 'CodeCraft API', ['translate'], 'translation', 'remote'), provider('custom', 'Custom API', ['translate'], 'translation', 'remote'),
     provider('nllb', 'NLLB-200', ['translate'], 'translation'), provider('hy_mt', 'Tencent HY-MT', ['translate'], 'translation'),
     provider('voxcpm', 'VoxCPM', ['synthesize'], 'tts'), provider('edge', 'Edge TTS', ['synthesize'], 'tts', 'remote'),

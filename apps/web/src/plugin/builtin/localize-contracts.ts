@@ -10,6 +10,11 @@ export type TtsSelection = ModelSelection & {
   voice: { mode: "preset"; id: string } | { mode: "source_clone" }
 }
 
+export type TrimRange = {
+  start_ms: number
+  end_ms: number
+}
+
 export type TaskConfig = {
   source_language: string
   target_language: string
@@ -20,6 +25,7 @@ export type TaskConfig = {
   tts: TtsSelection | null
   separation: ModelSelection | null
   subtitle_alignment?: ModelSelection | null
+  trim?: TrimRange | null
 }
 
 export type ModelCapability = {

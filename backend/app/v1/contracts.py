@@ -71,6 +71,19 @@ class TtsSelection(ModelSelection):
     voice: VoiceSelection
 
 
+class TrimRange(Contract):
+    """Optional clip range: cut the source before any pipeline step runs."""
+
+    start_ms: Annotated[int, Field(ge=0, le=86_400_000)]
+    end_ms: Annotated[int, Field(ge=1, le=86_400_000)]
+
+    @model_validator(mode="after")
+    def validate_range(self) -> Self:
+        if self.end_ms <= self.start_ms:
+            raise ValueError("trim end_ms must be after start_ms")
+        return self
+
+
 class TaskConfig(Contract):
     source_language: Annotated[str, Field(pattern=r"^(auto|[a-z]{2,3}(-[A-Za-z0-9]{2,8})*)$")]
     target_language: Annotated[str, Field(pattern=r"^[a-z]{2,3}(-[A-Za-z0-9]{2,8})*$")]
@@ -85,6 +98,8 @@ class TaskConfig(Contract):
     tts: TtsSelection | None
     separation: ModelSelection | None
     subtitle_alignment: ModelSelection | None = None
+    # Optional clip range; absent or null processes the whole video.
+    trim: TrimRange | None = None
 
     @model_validator(mode="after")
     def validate_pipeline(self) -> Self:

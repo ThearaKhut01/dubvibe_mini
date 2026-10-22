@@ -5,7 +5,7 @@ import { operations } from './media-contracts.js'
 
 export const name = 'workflow-localize'
 export const inject = ['catalog', 'settings']
-const labels: Record<string, string> = { download: 'Download video', prepare: 'Prepare media', separate: 'Separate vocals', recognize: 'Speech recognition', translate: 'Translate', reference: 'Prepare reference audio', synthesize: 'Generate dubbing', mix: 'Mix audio', align: 'Align subtitles', export: 'Export' }
+const labels: Record<string, string> = { download: 'Download video', cut: 'Cut video', prepare: 'Prepare media', separate: 'Separate vocals', recognize: 'Speech recognition', translate: 'Translate', reference: 'Prepare reference audio', synthesize: 'Generate dubbing', mix: 'Mix audio', align: 'Align subtitles', export: 'Export' }
 const selection = (extra: JsonObject = {}) => ({ type: 'object', required: ['adapter', 'model', 'device'], additionalProperties: false,
   properties: { adapter: { type: 'string', minLength: 1 }, model: { type: 'string', minLength: 1 }, device: { type: 'string', minLength: 1 }, ...extra } })
 const nullable = (schema: JsonObject) => ({ anyOf: [schema, { type: 'null' }] })
@@ -26,6 +26,8 @@ export const localizeSchema: JsonObject = {
       { type: 'object', additionalProperties: false, required: ['mode', 'id'], properties: { mode: { const: 'preset' }, id: { type: 'string', minLength: 1 } } },
     ] } })),
     separation: nullable(selection()), subtitle_alignment: nullable(selection()),
+    trim: nullable({ type: 'object', additionalProperties: false, required: ['start_ms', 'end_ms'],
+      properties: { start_ms: { type: 'integer', minimum: 0 }, end_ms: { type: 'integer', minimum: 1 } } }),
   },
 }
 export async function apply(ctx: Context, plugin: { integrity: string; version?: string }) {
@@ -39,7 +41,7 @@ export async function apply(ctx: Context, plugin: { integrity: string; version?:
   }
   // Khmer is the product's default target language for fresh installations;
   // this legacy fallback was silent Chinese and overrode the UI default.
-  const defaults = () => settings.defaults ?? { source_language: 'auto', target_language: 'km', output_mode: 'subtitles', keep_background: false, asr: first('asr'), translation: first('translation'), tts: null, separation: null, subtitle_alignment: null }
+  const defaults = () => settings.defaults ?? { source_language: 'auto', target_language: 'km', output_mode: 'subtitles', keep_background: false, asr: first('asr'), translation: first('translation'), tts: null, separation: null, subtitle_alignment: null, trim: null }
   const pick = (kind: string, config: JsonObject, catalog: CatalogService) => catalog.listProviders().find(item => item.capability === kind && (item.adapter ?? item.id) === config[kind]?.adapter)
   const workflow: WorkflowDefinition = {
     id: 'youdub.localize', version, pluginId, pluginVersion: version, integrity: plugin.integrity,
@@ -59,6 +61,14 @@ export async function apply(ctx: Context, plugin: { integrity: string; version?:
       if (config.output_mode === 'subtitles' && (config.tts || config.separation || config.keep_background)) fail('Subtitles mode requires no TTS, separation, or background mix.')
       if (config.output_mode !== 'subtitles' && (!config.tts || !config.tts.voice)) fail('Dubbing requires a TTS provider and voice.')
       if (config.subtitle_alignment && config.output_mode !== 'both') fail('Subtitle alignment requires both mode.')
+      const trim = config.trim as { start_ms?: unknown; end_ms?: unknown } | null | undefined
+      if (trim) {
+        const { start_ms: start, end_ms: end } = trim
+        if (typeof start !== 'number' || typeof end !== 'number' || !Number.isInteger(start) || !Number.isInteger(end)
+          || start < 0 || end <= start) fail('The clip must end after it starts.', 'trim')
+        else if (end - start < 1000) fail('The clip must be at least one second long.', 'trim')
+        else if (end - start > 86_400_000) fail('The clip must be shorter than 24 hours.', 'trim')
+      }
       const needsSeparation = config.keep_background || config.tts?.voice?.mode === 'source_clone'
       if (needsSeparation !== Boolean(config.separation)) fail('Separation must match the background and voice requirements.', 'separation')
       const connections = (await ctx.settings.read()).connections
@@ -88,7 +98,10 @@ export async function apply(ctx: Context, plugin: { integrity: string; version?:
       binding('media', 'youdub.media')
       if (config.source_url) {
         binding('download', 'youdub.download')
-        plan.bindings.download.options = { maxBytes: Number(process.env.LOCAL_UPLOAD_MAX_BYTES ?? 4294967296) }
+        // A clip range makes the source duration irrelevant to the output, so
+        // long videos stay downloadable; the cut segment is admission-checked.
+        plan.bindings.download.options = { maxBytes: Number(process.env.LOCAL_UPLOAD_MAX_BYTES ?? 4294967296),
+          ...(config.trim ? { maxDurationMs: 86_400_000 } : {}) }
         plan.config.source_url = videoSource(config.source_url).url
       }
       for (const kind of ['asr', 'translation', 'tts', 'separation', 'subtitle_alignment']) if (config[kind]) binding(kind, pick(kind, config, catalog)!.id, config[kind])
@@ -96,7 +109,12 @@ export async function apply(ctx: Context, plugin: { integrity: string; version?:
       const step = (stepId: string, output: string) => ({ from: 'step' as const, stepId, output })
       const add = (id: string, bindingKey: string, input: JsonObject) => { const operation = operations[id]; plan.steps.push({ id, label: labels[id], bindingKey, operation: operation.id, input, outputs: structuredClone(operation.outputs) }) }
       if (config.source_url) add('download', 'download', { url: plan.config.source_url })
-      const video = config.source_url ? step('download', 'video') : task('video')
+      let video = config.source_url ? step('download', 'video') : task('video')
+      if (config.trim) {
+        const { start_ms: start, end_ms: end } = config.trim as { start_ms: number; end_ms: number }
+        add('cut', 'media', { video, start_ms: start, end_ms: end })
+        video = step('cut', 'video')
+      }
       add('prepare', 'media', { video })
       if (config.separation) add('separate', 'separation', { sourceAudio: step('prepare', 'sourceAudio') })
       add('recognize', 'asr', { audio: config.separation ? step('separate', 'vocals') : step('prepare', 'sourceAudio'), mediaInfo: step('prepare', 'mediaInfo') })

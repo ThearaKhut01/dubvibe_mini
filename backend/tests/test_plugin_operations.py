@@ -186,6 +186,29 @@ def test_actual_video_prepare_external_subtitle_import_and_export(tmp_path):
     assert float(json.loads(result.stdout)["format"]["duration"]) == pytest.approx(1.0, abs=0.05)
 
 
+def test_actual_video_cut_keeps_only_the_clip_range(tmp_path):
+    from backend.app.config import ffmpeg_binary, ffprobe_binary
+    if not shutil.which(ffmpeg_binary()) or not shutil.which(ffprobe_binary()):
+        pytest.skip("Real media bridge verification requires ffmpeg and ffprobe")
+    video = tmp_path / "source.mp4"
+    subprocess.run([ffmpeg_binary(), "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "color=c=black:s=320x180:r=25",
+                    "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=44100", "-t", "3", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+                    "-c:a", "aac", str(video)], check=True, capture_output=True)
+    operation = invoke(tmp_path, "media.cut/v1", {"video": {"path": str(video)}, "start_ms": 500, "end_ms": 2000})
+    cut = operation.execute()
+    descriptor = cut["artifacts"]["video"]
+    assert descriptor["metadata"]["durationMs"] == pytest.approx(1500, abs=120)
+    clip = operation.work / descriptor["path"]
+    prepared = invoke(tmp_path, "media.prepare/v1", {"video": {"path": str(clip)}}).execute()
+    assert prepared["outputs"]["mediaInfo"]["duration_ms"] == pytest.approx(1500, abs=120)
+
+
+def test_cut_rejects_an_invalid_range_before_reading_the_file(tmp_path):
+    with pytest.raises(WorkerError, match="clip range"):
+        invoke(tmp_path, "media.cut/v1",
+               {"video": {"path": str(tmp_path / "missing.mp4")}, "start_ms": 2000, "end_ms": 2000}).execute()
+
+
 def send(process, invocation_id, seq, kind, payload):
     process.stdin.write(json.dumps({"version": VERSION, "invocationId": invocation_id, "seq": seq, "type": kind, "payload": payload}) + "\n")
     process.stdin.flush()

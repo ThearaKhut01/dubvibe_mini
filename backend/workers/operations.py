@@ -91,7 +91,8 @@ class Operation:
 
     def execute(self):
         method = {
-            "media.download/v1": self.download, "media.prepare/v1": self.prepare, "audio.separate/v1": self.separate,
+            "media.download/v1": self.download, "media.prepare/v1": self.prepare, "media.cut/v1": self.cut,
+            "audio.separate/v1": self.separate,
             "speech.transcribe/v1": self.asr, "text.translate/v1": self.translate,
             "voice.reference/v1": self.reference, "speech.synthesize/v1": self.tts,
             "audio.mix/v1": self.mix, "text.align/v1": self.align,
@@ -107,7 +108,8 @@ class Operation:
     def download(self):
         from .download import download_video
         path, metadata = download_video(self.inputs["url"], self.work, self.wire,
-                                        int(self.option("maxBytes", default=4 * 1024 ** 3)))
+                                        int(self.option("maxBytes", default=4 * 1024 ** 3)),
+                                        self.option("maxDurationMs"))
         return {"video": self.artifact("video", path, "video/mp4/v1", "video/mp4", metadata)}
 
     def prepare(self):
@@ -125,6 +127,37 @@ class Operation:
             raise WorkerError("INVALID_MEDIA", f"Source audio extraction failed: {result.stderr}")
         audio_ref, _ = self.audio("sourceAudio", audio)
         return {"sourceAudio": audio_ref, "mediaInfo": info}
+
+    def cut(self):
+        """Cut the clip range out of the source so every later step sees only it."""
+        from backend.app.config import ffmpeg_binary
+        from backend.app.v1 import media
+        from backend.app.v1.runtime import RUNTIME_LIMITS
+        start, end = self.inputs.get("start_ms"), self.inputs.get("end_ms")
+        if type(start) is not int or type(end) is not int or start < 0 or end <= start:
+            raise WorkerError("INVALID_INPUT", "The clip range is invalid.")
+        source = self.path(self.inputs["video"])
+        # A trimmed source may be longer than the processing cap; the cut clip
+        # itself still has to pass the normal admission check below.
+        info = media.inspect_video(source, {**RUNTIME_LIMITS, "max_video_duration_ms": 86_400_000},
+                                   self.wire.check_cancel)
+        end = min(end, info["duration_ms"])
+        if start >= end:
+            raise WorkerError("INVALID_INPUT", "The clip starts after the end of the video.")
+        target = self.work / "clip.mp4"
+        self.wire.progress(None, "Cutting the source video")
+        result = media._run_media([
+            ffmpeg_binary(), "-hide_banner", "-loglevel", "error", "-nostdin", "-y", "-xerror",
+            "-ss", f"{start / 1000:.3f}", "-i", str(source), "-t", f"{(end - start) / 1000:.3f}",
+            "-vf", "setpts=PTS-STARTPTS", "-af", "asetpts=PTS-STARTPTS",
+            "-map", "0:v:0", "-map", "0:a:0?", "-c:v", "libx264", "-preset", "veryfast", "-crf", "20",
+            "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", str(target),
+        ], check_cancel=self.wire.check_cancel)
+        if result.returncode:
+            raise WorkerError("INVALID_MEDIA", f"Video cut failed: {result.stderr}")
+        clip = media.inspect_video(target, RUNTIME_LIMITS, self.wire.check_cancel)
+        return {"video": self.artifact("video", target, "video/mp4/v1", "video/mp4",
+                                       {"durationMs": clip["duration_ms"]})}
 
     def separate(self):
         from backend.app.v1 import separate
