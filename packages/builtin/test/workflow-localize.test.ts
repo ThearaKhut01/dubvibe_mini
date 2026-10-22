@@ -61,7 +61,12 @@ test('localize config accepts the optional translation fallback chain from saved
     tts: { ...select('edge'), voice: { mode: 'preset', id: 'km-KH-SreymomNeural' } },
     translation_providers: ['nllb', 'hy_mt'], translation_models: { nllb: 'NLLB-200-distilled-600M' } }), true)
   assert.equal(assertValid({ ...base, stranger: 1 }), false)
-  assert.ok(validator.errors!.every(error => error.message!.includes('additional properties')))
+  assert.ok(validator.errors!.every((error: { message?: string }) => error.message!.includes('additional properties')))
+  // Render parts: absent/null renders one pass, whole minutes 1..1440 are valid.
+  assert.equal(assertValid({ ...base, chunk_minutes: null }), true)
+  assert.equal(assertValid({ ...base, chunk_minutes: 2 }), true)
+  assert.equal(assertValid({ ...base, chunk_minutes: 1440 }), true)
+  for (const chunk_minutes of [0, -1, 1441, 2.5, '2']) assert.equal(assertValid({ ...base, chunk_minutes }), false)
 })
 
 test('localize cuts the requested clip before prepare and export', async t => {

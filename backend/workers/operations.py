@@ -35,11 +35,12 @@ class Operation:
 
     def json_value(self, name):
         value = self.inputs[name]
-        return json.loads(self.path(value).read_text()) if isinstance(value, dict) and "path" in value else value
+        return json.loads(self.path(value).read_text(encoding="utf-8")) if isinstance(value, dict) and "path" in value else value
 
     def json_file(self, name, value=None) -> Path:
         path = self.work / f"{name}.input.json"
-        path.write_text(json.dumps(self.json_value(name) if value is None else value, ensure_ascii=False, allow_nan=False))
+        path.write_text(json.dumps(self.json_value(name) if value is None else value, ensure_ascii=False, allow_nan=False),
+                        encoding="utf-8")
         return path
 
     def artifact(self, key, path: Path, schema: str, mime: str, metadata=None):
@@ -79,6 +80,7 @@ class Operation:
             output_mode=self.option("outputMode", "output_mode", "both"),
             keep_background=self.option("keepBackground", "keep_background", False),
             max_completion_tokens=self.option("maxCompletionTokens", "max_completion_tokens", 65535),
+            chunk_minutes=self.option("chunkMinutes", "chunk_minutes", None),
             record_raw=True,
             asr=selection("asr", "whisper"), translation=selection("translation", "openai"),
             tts=selection("tts", "voxcpm"), separation=selection("separation", "demucs"),

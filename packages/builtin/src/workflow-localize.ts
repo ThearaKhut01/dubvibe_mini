@@ -26,6 +26,7 @@ export const localizeSchema: JsonObject = {
       { type: 'object', additionalProperties: false, required: ['mode', 'id'], properties: { mode: { const: 'preset' }, id: { type: 'string', minLength: 1 } } },
     ] } })),
     separation: nullable(selection()), subtitle_alignment: nullable(selection()),
+    chunk_minutes: nullable({ type: 'integer', minimum: 1, maximum: 1440 }),
     trim: nullable({ type: 'object', additionalProperties: false, required: ['start_ms', 'end_ms'],
       properties: { start_ms: { type: 'integer', minimum: 0 }, end_ms: { type: 'integer', minimum: 1 } } }),
   },
@@ -41,7 +42,7 @@ export async function apply(ctx: Context, plugin: { integrity: string; version?:
   }
   // Khmer is the product's default target language for fresh installations;
   // this legacy fallback was silent Chinese and overrode the UI default.
-  const defaults = () => settings.defaults ?? { source_language: 'auto', target_language: 'km', output_mode: 'subtitles', keep_background: false, asr: first('asr'), translation: first('translation'), tts: null, separation: null, subtitle_alignment: null, trim: null }
+  const defaults = () => settings.defaults ?? { source_language: 'auto', target_language: 'km', output_mode: 'subtitles', keep_background: false, asr: first('asr'), translation: first('translation'), tts: null, separation: null, subtitle_alignment: null, trim: null, chunk_minutes: null }
   const pick = (kind: string, config: JsonObject, catalog: CatalogService) => catalog.listProviders().find(item => item.capability === kind && (item.adapter ?? item.id) === config[kind]?.adapter)
   const workflow: WorkflowDefinition = {
     id: 'youdub.localize', version, pluginId, pluginVersion: version, integrity: plugin.integrity,

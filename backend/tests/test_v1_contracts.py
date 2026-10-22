@@ -141,3 +141,12 @@ def test_task_config_accepts_an_optional_clip_range(config):
                     {"start_ms": 0}, {"start_ms": 0, "end_ms": 1000.5}):
         with pytest.raises(ValidationError):
             TaskConfig.model_validate(config | {"trim": invalid})
+
+
+def test_task_config_accepts_an_optional_render_part_size(config):
+    assert TaskConfig.model_validate(config).chunk_minutes is None
+    assert TaskConfig.model_validate(config | {"chunk_minutes": 2}).chunk_minutes == 2
+    assert TaskConfig.model_validate(config | {"chunk_minutes": None}).chunk_minutes is None
+    for invalid in (0, -1, 1441, 2.5, "2", True):
+        with pytest.raises(ValidationError):
+            TaskConfig.model_validate(config | {"chunk_minutes": invalid})

@@ -26,6 +26,7 @@ export type TaskConfig = {
   separation: ModelSelection | null
   subtitle_alignment?: ModelSelection | null
   trim?: TrimRange | null
+  chunk_minutes?: number | null
 }
 
 export type ModelCapability = {

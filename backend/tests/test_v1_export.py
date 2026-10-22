@@ -57,12 +57,12 @@ def test_srt_splits_display_only_preserves_inputs_and_joins_translation_by_id(mo
 
     monkeypatch.setattr(media, "_run_media", render)
     result = export.run(context, lambda value, message: None, output_dir=context.work_dir / "output")
-    assert result.output_files["source_subtitles"].read_text() == (
+    assert result.output_files["source_subtitles"].read_text(encoding="utf-8") == (
         "1\n00:00:00,000 --> 00:00:00,200\nHello\n\n"
         "2\n00:00:00,200 --> 00:00:00,400\nworld\n\n"
         "3\n00:00:00,650 --> 00:00:01,000\nEnd of the clip\n"
     )
-    assert result.output_files["translated_subtitles"].read_text() == (
+    assert result.output_files["translated_subtitles"].read_text(encoding="utf-8") == (
         "1\n00:00:00,000 --> 00:00:00,400\n你好，世界\n\n"
         "2\n00:00:00,650 --> 00:00:01,000\n结束了\n"
     )
@@ -84,7 +84,7 @@ def test_srt_splits_display_only_preserves_inputs_and_joins_translation_by_id(mo
 ])
 def test_invalid_translation_is_rejected_before_rendering(monkeypatch, context, change):
     path = context.input_files["translation"]
-    data = json.loads(path.read_text())
+    data = json.loads(path.read_text(encoding="utf-8"))
     change(data)
     path.write_text(json.dumps(data))
     monkeypatch.setattr(media, "_run_media", lambda *args, **kwargs: pytest.fail("invalid input reached FFmpeg"))
@@ -95,7 +95,7 @@ def test_invalid_translation_is_rejected_before_rendering(monkeypatch, context, 
 
 def test_cue_past_video_end_fails_instead_of_silently_truncating_tail(context):
     path = context.input_files["transcript"]
-    data = json.loads(path.read_text())
+    data = json.loads(path.read_text(encoding="utf-8"))
     data["segments"][-1]["end_ms"] = 1500
     path.write_text(json.dumps(data))
     with pytest.raises(ApiError, match="extend beyond"):
@@ -192,8 +192,8 @@ def test_dubbing_outputs_use_the_final_wav_and_separate_subtitle_timelines(monke
     assert [command[index + 1] for index, value in enumerate(command) if value == "-map"] == ["0:v:0", "1:a:0"]
     assert str(result.output_files["audio"].resolve()) in command
     if mode == "both":
-        assert "00:00:00,650 --> 00:00:01,000" in result.output_files["source_subtitles"].read_text()
-        translated = result.output_files["translated_subtitles"].read_text()
+        assert "00:00:00,650 --> 00:00:01,000" in result.output_files["source_subtitles"].read_text(encoding="utf-8")
+        translated = result.output_files["translated_subtitles"].read_text(encoding="utf-8")
         assert "00:00:00,000 --> 00:00:00,320\n你好，世界" in translated
         assert "00:00:00,720 --> 00:00:00,980\n结束了" in translated
         assert "-vf" in command
@@ -207,7 +207,7 @@ def test_dubbing_rejects_inconsistent_timeline_or_audio(context, bad_input):
     context = add_dubbing(context, "both")
     if bad_input == "timeline":
         path = context.input_files["alignment"]
-        payload = json.loads(path.read_text())
+        payload = json.loads(path.read_text(encoding="utf-8"))
         payload["segments"][0]["source_end_ms"] = 401
         path.write_text(json.dumps(payload))
     else:
@@ -249,7 +249,7 @@ def test_subtitle_hides_trailing_separators_after_alignment_without_changing_cue
     with pytest.raises(ApiError, match="contains no text"):
         export._write_srt(path, [], translated=True, aligned_cues=cues)
     export._write_srt(path, [], translated=True, aligned_cues=cues[:-1])
-    assert [block.splitlines()[2] for block in path.read_text().strip().split("\n\n")] == [
+    assert [block.splitlines()[2] for block in path.read_text(encoding="utf-8").strip().split("\n\n")] == [
         "第一段文字", "第二段文字", "第三段文字", "第四段文字", "仍保留内部，标点", "Use v1.2", "保留《第一章，第二章》",
     ]
     assert cues == original
@@ -258,9 +258,9 @@ def test_subtitle_hides_trailing_separators_after_alignment_without_changing_cue
 def test_complete_utterance_produces_multiple_cues_inside_its_final_dubbed_span(monkeypatch, context):
     context = add_dubbing(context, "both")
     path = context.input_files["translation"]
-    payload = json.loads(path.read_text())
+    payload = json.loads(path.read_text(encoding="utf-8"))
     payload["segments"][1]["text"] = "欢迎来到dubvibe_mini，今天测试视频翻译，保留完整连续配音。"
-    path.write_text(json.dumps(payload, ensure_ascii=False))
+    path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
     original = {name: path.read_bytes() for name, path in context.input_files.items()}
 
     def render(command, **kwargs):
@@ -269,7 +269,7 @@ def test_complete_utterance_produces_multiple_cues_inside_its_final_dubbed_span(
 
     monkeypatch.setattr(media, "_run_media", render)
     result = export.run(context, lambda *args: None, output_dir=context.work_dir / "output")
-    blocks = result.output_files["translated_subtitles"].read_text().strip().split("\n\n")
+    blocks = result.output_files["translated_subtitles"].read_text(encoding="utf-8").strip().split("\n\n")
     assert [block.splitlines()[2] for block in blocks] == [
         "欢迎来到dubvibe_mini", "今天测试视频翻译", "保留完整连续配音", "结束了",
     ]
@@ -293,7 +293,7 @@ def test_qwen_export_changes_only_translated_cue_times_and_preserves_final_audio
         # start. Its subtitle must use that actual placement, including when
         # it falls before 650ms on the unchanged source subtitle timeline.
         path = context.input_files["alignment"]
-        payload = json.loads(path.read_text())
+        payload = json.loads(path.read_text(encoding="utf-8"))
         payload["segments"][1].update(dubbed_start_ms=500, dubbed_end_ms=760)
         path.write_text(json.dumps(payload))
         audio, rate = sf.read(context.input_files["mixed_audio"], always_2d=True)
@@ -314,7 +314,7 @@ def test_qwen_export_changes_only_translated_cue_times_and_preserves_final_audio
     def infer_and_render(command, **kwargs):
         commands.append(command)
         if "--request-path" in command:
-            request = json.loads(Path(command[command.index("--request-path") + 1]).read_text())
+            request = json.loads(Path(command[command.index("--request-path") + 1]).read_text(encoding="utf-8"))
             assert [item["segment_id"] for item in request["clips"]] == ["first", "last"]
             assert [item["text"].strip() for item in request["clips"]] == ["你好，世界！", "结束了。"]
             assert [Path(item["audio_path"]) for item in request["clips"]] == [
@@ -323,7 +323,7 @@ def test_qwen_export_changes_only_translated_cue_times_and_preserves_final_audio
             Path(command[command.index("--output-path") + 1]).write_text(json.dumps({"clips": [
                 {"segment_id": "first", "words": [{"text": "你好世界", "start_time": 0.08, "end_time": 0.24}]},
                 {"segment_id": "last", "words": [{"text": "结束了", "start_time": 0.08, "end_time": 0.16}]},
-            ]}, ensure_ascii=False))
+            ]}, ensure_ascii=False), encoding="utf-8")
         else:
             Path(command[-1]).write_bytes(b"rendered-video")
         return subprocess.CompletedProcess(command, 0, "", "")
@@ -331,9 +331,9 @@ def test_qwen_export_changes_only_translated_cue_times_and_preserves_final_audio
     monkeypatch.setattr(forced_alignment, "available_models", lambda: [forced_alignment.MODEL_NAME])
     monkeypatch.setattr(media, "_run_media", infer_and_render)
     from backend.app.v1.segments import Transcript, Translation
-    transcript = Transcript.model_validate_json(context.input_files["transcript"].read_text())
-    translation = Translation.model_validate_json(context.input_files["translation"].read_text()).match(transcript)
-    timeline = {item["segment_id"]: item for item in json.loads(context.input_files["alignment"].read_text())["segments"]}
+    transcript = Transcript.model_validate_json(context.input_files["transcript"].read_text(encoding="utf-8"))
+    translation = Translation.model_validate_json(context.input_files["translation"].read_text(encoding="utf-8")).match(transcript)
+    timeline = {item["segment_id"]: item for item in json.loads(context.input_files["alignment"].read_text(encoding="utf-8"))["segments"]}
     rows = [(segment.model_copy(update={"start_ms": timeline[segment.id]["dubbed_start_ms"],
                                        "end_ms": timeline[segment.id]["dubbed_end_ms"]}), translation[segment.id])
             for segment in transcript.segments]
@@ -343,11 +343,11 @@ def test_qwen_export_changes_only_translated_cue_times_and_preserves_final_audio
 
     assert len(commands) == 2
     second_time = "00:00:00,580 --> 00:00:00,660" if earlier_dubbed_start else "00:00:00,800 --> 00:00:00,880"
-    assert result.output_files["translated_subtitles"].read_text() == (
+    assert result.output_files["translated_subtitles"].read_text(encoding="utf-8") == (
         "1\n00:00:00,080 --> 00:00:00,240\n你好，世界\n\n"
         f"2\n{second_time}\n结束了\n"
     )
-    assert result.output_files["source_subtitles"].read_text() == (
+    assert result.output_files["source_subtitles"].read_text(encoding="utf-8") == (
         "1\n00:00:00,000 --> 00:00:00,200\nHello\n\n"
         "2\n00:00:00,200 --> 00:00:00,400\nworld\n\n"
         "3\n00:00:00,650 --> 00:00:01,000\nEnd of the clip\n"
@@ -444,7 +444,7 @@ def test_real_export_preserves_video_tail_and_first_audio_and_burns_tail_subtitl
     # A nonempty last frame with changed pixels proves the last cue was burned
     # through the end of the clip, beyond merely writing a valid SRT file.
     assert sum(output_frame) > sum(source_frame) + 200
-    assert "00:00:01,000\n结束了" in result.output_files["translated_subtitles"].read_text()
+    assert "00:00:01,000\n结束了" in result.output_files["translated_subtitles"].read_text(encoding="utf-8")
 
 
 @pytest.mark.parametrize("cues", [
@@ -461,3 +461,65 @@ def test_external_aligned_cues_must_preserve_full_translation_and_video_timeline
         export.run(context, lambda *_: None, output_dir=context.work_dir / "output", prepared_cues=cues)
     assert error.value.content["error"]["code"] == "INVALID_PROVIDER_RESULT"
     assert not (context.work_dir / "output" / "video.mp4").exists()
+
+
+def test_chunk_bounds_split_the_timeline_and_window_cues_rebase_for_each_part():
+    assert export.chunk_bounds(150_000, 60_000) == [(0, 60_000), (60_000, 120_000), (120_000, 150_000)]
+    assert export.chunk_bounds(60_000, 60_000) == [(0, 60_000)]
+    with pytest.raises(ValueError):
+        export.chunk_bounds(1000, 0)
+    cues = [(0, 10_000, "A"), (59_000, 61_000, "B"), (70_000, 80_000, "C"), (70_000, 70_000, "empty")]
+    assert export._window_cues(cues, 60_000, 65_000) == [(0, 1000, "B")]
+    assert export._window_cues(cues, 5_000, 65_000) == [(0, 5_000, "A"), (54_000, 56_000, "B")]
+
+
+def test_chunked_export_renders_parts_and_joins_the_complete_video(tmp_path):
+    if not shutil.which(ffmpeg_binary()) or not shutil.which(media.ffprobe_binary()):
+        pytest.skip("Local ffmpeg and ffprobe are required for the real export check")
+    root = tmp_path / "parts task"
+    work = root / "work"
+    work.mkdir(parents=True)
+    video = root / "source.mp4"
+    subprocess.run([
+        ffmpeg_binary(), "-hide_banner", "-loglevel", "error", "-nostdin", "-y",
+        "-f", "lavfi", "-i", "color=c=black:s=320x180:r=25",
+        "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=48000", "-t", "65",
+        "-c:v", "libx264", "-pix_fmt", "yuv420p", "-c:a", "aac", str(video),
+    ], check=True, capture_output=True)
+    files = {"video": video}
+    files["media_info"] = work / "media_info.json"
+    files["media_info"].write_text(json.dumps({"duration_ms": 65_000, "width": 320, "height": 180}))
+    files["transcript"] = work / "transcript.json"
+    files["transcript"].write_text(json.dumps({"detected_language": "en", "segments": [
+        {"id": "whole", "start_ms": 0, "end_ms": 65_000, "text": "The whole video."},
+    ]}))
+    files["translation"] = work / "translation.json"
+    files["translation"].write_text(json.dumps({"source_language": "en", "target_language": "zh", "segments": [
+        {"segment_id": "whole", "text": "整段视频的字幕。"},
+    ]}, ensure_ascii=False), encoding="utf-8")
+    config = TaskConfig.model_validate({
+        "source_language": "en", "target_language": "zh", "output_mode": "subtitles", "keep_background": False,
+        "asr": {"adapter": "whisper", "model": "small", "device": "cpu"},
+        "translation": {"adapter": "openai", "model": "test-model", "device": "remote"},
+        "tts": None, "separation": None, "chunk_minutes": 1,
+    })
+    context = StageContext(task_id="00000000-0000-0000-0000-000000000002", attempt=1,
+                           stage="export", config=config, input_files=files, work_dir=work)
+    messages = []
+    result = export.run(context, lambda value, message: messages.append(message), output_dir=work / "output")
+    assert "Rendering part 1 of 2" in messages
+    assert "Rendering part 2 of 2" in messages
+    assert messages[-1] == "Output media is ready"
+    output = result.output_files["video"]
+    assert media._duration_ms(media._probe(output)) == pytest.approx(65_000, abs=300)
+    assert "00:01:05,000" in result.output_files["translated_subtitles"].read_text(encoding="utf-8")
+    assert not list(output.parent.glob("part-*.mp4"))
+
+    def frame(path):
+        return subprocess.run([
+            ffmpeg_binary(), "-v", "error", "-ss", "64", "-i", str(path), "-frames:v", "1",
+            "-pix_fmt", "gray", "-f", "rawvideo", "-",
+        ], check=True, capture_output=True).stdout
+
+    # The subtitle spanning the whole video is burned into the joined second part too.
+    assert sum(frame(output)) > sum(frame(video)) + 200

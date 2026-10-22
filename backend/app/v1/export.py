@@ -85,21 +85,51 @@ def _subtitle_rows(transcript: Transcript, translation: Translation, duration_ms
     return [(item, translations[item.id]) for item in transcript.segments]
 
 
-def _write_srt(path: Path, rows: list[tuple[Segment, str]], *, translated: bool,
-               aligned_cues: list[tuple[int, int, str]] | None = None) -> None:
-    cues = []
-    display = aligned_cues if aligned_cues is not None else [
+def _cue_entries(rows: list[tuple[Segment, str]], *, translated: bool,
+                 aligned_cues: list[tuple[int, int, str]] | None = None) -> list[tuple[int, int, str]]:
+    cues = aligned_cues if aligned_cues is not None else [
         cue for segment, translation in rows
         for cue in _display_cues(translation if translated else segment.text, segment.start_ms, segment.end_ms)
     ]
-    for start, end, part in display:
+    result = []
+    for start, end, part in cues:
         # Keep complete cue text through alignment validation; hide only the
         # trailing separators in the exported subtitles and burned-in display.
         display_text = " ".join(part.split()).rstrip(SUBTITLE_BREAK_PUNCTUATION + "… ")
         if not display_text:
             raise _invalid("A subtitle fragment contains no text after removing trailing punctuation.")
-        cues.append(f"{len(cues) + 1}\n{_srt_time(start)} --> {_srt_time(end)}\n{display_text}\n")
-    path.write_text("\n".join(cues), encoding="utf-8", newline="\n")
+        result.append((start, end, display_text))
+    return result
+
+
+def _write_cues(path: Path, cues: list[tuple[int, int, str]]) -> None:
+    path.write_text("\n".join(
+        f"{index}\n{_srt_time(start)} --> {_srt_time(end)}\n{text}\n" for index, (start, end, text) in enumerate(cues, 1)
+    ), encoding="utf-8", newline="\n")
+
+
+def _write_srt(path: Path, rows: list[tuple[Segment, str]], *, translated: bool,
+               aligned_cues: list[tuple[int, int, str]] | None = None) -> None:
+    _write_cues(path, _cue_entries(rows, translated=translated, aligned_cues=aligned_cues))
+
+
+def chunk_bounds(duration_ms: int, chunk_ms: int) -> list[tuple[int, int]]:
+    """Split a timeline into consecutive half-open ranges of chunk_ms."""
+    if type(chunk_ms) is not int or chunk_ms <= 0:
+        raise ValueError("chunk size must be a positive integer")
+    return [(start, min(start + chunk_ms, duration_ms)) for start in range(0, duration_ms, chunk_ms)]
+
+
+def _window_cues(cues: list[tuple[int, int, str]], start_ms: int, end_ms: int) -> list[tuple[int, int, str]]:
+    """Cues that are visible inside one render part, rebased to its start."""
+    window = []
+    for start, end, text in cues:
+        if end <= start_ms or start >= end_ms:
+            continue
+        left, right = max(0, start - start_ms), min(end, end_ms) - start_ms
+        if right > left:
+            window.append((left, right, text))
+    return window
 
 
 def _validate_prepared_cues(cues: list[tuple[int, int, str]], rows: list[tuple[Segment, str]], duration_ms: int) -> None:
@@ -241,33 +271,73 @@ def run(context: StageContext, progress: Callable[[float | None, str], None], *,
     if include_subtitles:
         if prepared_cues is not None:
             _validate_prepared_cues(prepared_cues, translated_rows, info["duration_ms"])
-        _write_srt(source_srt, rows, translated=False)
-        _write_srt(translated_srt, translated_rows, translated=True, aligned_cues=prepared_cues)
+        translated_cues = _cue_entries(translated_rows, translated=True, aligned_cues=prepared_cues)
+        _write_cues(source_srt, _cue_entries(rows, translated=False))
+        _write_cues(translated_srt, translated_cues)
         outputs.update(source_subtitles=source_srt, translated_subtitles=translated_srt)
+    else:
+        translated_cues = []
     progress(None, "Rendering output video")
-    command = [
-        ffmpeg_binary(), "-hide_banner", "-loglevel", "error", "-nostdin", "-y", "-xerror",
-        "-i", str(video.resolve()),
-    ]
-    if include_dubbing:
-        command.extend(["-i", str(outputs["audio"].resolve())])
+    style = ""
     if include_subtitles:
         orientation = "portrait" if info["height"] > info["width"] else "landscape"
         style = subtitle_style_for_orientation(orientation, _font(context.config.target_language),
                                               context.config.target_language)
-        command.extend(["-vf", f"subtitles=filename=translated.srt:force_style='{style}'"])
-    command.extend([
-        "-map", "0:v:0", "-map", "1:a:0" if include_dubbing else "0:a:0", "-c:v", "libx264",
-        "-preset", "fast", "-crf", "23", "-pix_fmt", "yuv420p", "-c:a", "aac", "-movflags", "+faststart",
-        str(final_video.resolve()),
-    ])
-    try:
-        result = media._run_media(command, check_cancel=context.check_cancel, cwd=output.resolve())
-    except FileNotFoundError as exc:
-        raise ApiError(503, "RUNTIME_UNAVAILABLE", "ffmpeg is unavailable.", stage="export") from exc
-    if result.returncode != 0:
-        raise ApiError(500, "INTERNAL_ERROR", f"FFmpeg video export failed (exit {result.returncode}).",
-                       stage="export", action="retry")
+    base = [ffmpeg_binary(), "-hide_banner", "-loglevel", "error", "-nostdin", "-y", "-xerror"]
+    encode = ["-c:v", "libx264", "-preset", "fast", "-crf", "23", "-pix_fmt", "yuv420p", "-c:a", "aac"]
+
+    def render(command: list[str]) -> None:
+        try:
+            result = media._run_media(command, check_cancel=context.check_cancel, cwd=output.resolve())
+        except FileNotFoundError as exc:
+            raise ApiError(503, "RUNTIME_UNAVAILABLE", "ffmpeg is unavailable.", stage="export") from exc
+        if result.returncode != 0:
+            raise ApiError(500, "INTERNAL_ERROR", f"FFmpeg video export failed (exit {result.returncode}).",
+                           stage="export", action="retry")
+
+    # Rendering in short parts keeps each FFmpeg call small (steady progress,
+    # lower memory) and joins the encoded parts into one complete video.
+    chunk = getattr(context.config, "chunk_minutes", None)
+    bounds = (chunk_bounds(info["duration_ms"], chunk * 60_000)
+              if type(chunk) is int and chunk > 0 and info["duration_ms"] > chunk * 60_000 else None)
+    if bounds:
+        parts = []
+        for index, (start, end) in enumerate(bounds, 1):
+            part = output / f"part-{index:04d}.mp4"
+            command = base + ["-ss", f"{start / 1000:.3f}", "-i", str(video.resolve())]
+            if include_dubbing:
+                command += ["-ss", f"{start / 1000:.3f}", "-i", str(outputs["audio"].resolve())]
+            command += ["-t", f"{(end - start) / 1000:.3f}"]
+            # Reset timestamps so every part starts at zero and matches its
+            # rebased subtitle file; also keeps successive parts aligned.
+            filters = ["setpts=PTS-STARTPTS"]
+            if include_subtitles:
+                part_srt = output / f"part-{index:04d}.srt"
+                _write_cues(part_srt, _window_cues(translated_cues, start, end))
+                filters.append(f"subtitles=filename={part_srt.name}:force_style='{style}'")
+            command += ["-vf", ",".join(filters), "-af", "asetpts=PTS-STARTPTS",
+                        "-map", "0:v:0", "-map", "1:a:0" if include_dubbing else "0:a:0", *encode, str(part)]
+            render(command)
+            parts.append(part)
+            progress(index / (len(bounds) + 1), f"Rendering part {index} of {len(bounds)}")
+        listing = output / "parts.txt"
+        listing.write_text("".join(f"file '{part.name}'\n" for part in parts), encoding="utf-8")
+        progress(len(bounds) / (len(bounds) + 1), "Joining rendered parts")
+        # Copy the rendered video tracks; re-encode only the joined audio so
+        # encoder padding at part boundaries cannot produce invalid timestamps.
+        render(base + ["-f", "concat", "-safe", "0", "-i", str(listing), "-c:v", "copy", "-c:a", "aac",
+                       "-movflags", "+faststart", str(final_video.resolve())])
+        for path in [*parts, listing, *(output / f"part-{index:04d}.srt" for index in range(1, len(bounds) + 1))]:
+            path.unlink(missing_ok=True)
+    else:
+        command = base + ["-i", str(video.resolve())]
+        if include_dubbing:
+            command += ["-i", str(outputs["audio"].resolve())]
+        if include_subtitles:
+            command += ["-vf", f"subtitles=filename=translated.srt:force_style='{style}'"]
+        command += ["-map", "0:v:0", "-map", "1:a:0" if include_dubbing else "0:a:0", *encode,
+                    "-movflags", "+faststart", str(final_video.resolve())]
+        render(command)
     if not final_video.is_file() or final_video.stat().st_size == 0:
         raise ApiError(500, "STAGE_OUTPUT_MISSING", "The output video was not produced.",
                        stage="export", action="retry")

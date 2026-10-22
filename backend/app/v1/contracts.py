@@ -100,6 +100,8 @@ class TaskConfig(Contract):
     subtitle_alignment: ModelSelection | None = None
     # Optional clip range; absent or null processes the whole video.
     trim: TrimRange | None = None
+    # Render the output video in parts of this many minutes, then join them.
+    chunk_minutes: Annotated[int, Field(ge=1, le=1440)] | None = None
 
     @model_validator(mode="after")
     def validate_pipeline(self) -> Self:
