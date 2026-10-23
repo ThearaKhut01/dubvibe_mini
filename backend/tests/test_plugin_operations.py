@@ -186,6 +186,36 @@ def test_actual_video_prepare_external_subtitle_import_and_export(tmp_path):
     assert float(json.loads(result.stdout)["format"]["duration"]) == pytest.approx(1.0, abs=0.05)
 
 
+def test_worker_export_keeps_each_render_part_as_a_video_output(tmp_path):
+    from backend.app.config import ffmpeg_binary, ffprobe_binary
+    if not shutil.which(ffmpeg_binary()) or not shutil.which(ffprobe_binary()):
+        pytest.skip("Real media bridge verification requires ffmpeg and ffprobe")
+    video = tmp_path / "source.mp4"
+    subprocess.run([ffmpeg_binary(), "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi", "-i", "color=c=black:s=320x180:r=25",
+                    "-f", "lavfi", "-i", "sine=frequency=440:sample_rate=44100", "-t", "65", "-c:v", "libx264", "-pix_fmt", "yuv420p",
+                    "-c:a", "aac", str(video)], check=True, capture_output=True)
+    prepared = invoke(tmp_path, "media.prepare/v1", {"video": {"path": str(video)}}).execute()
+    source, translated = tmp_path / "source.srt", tmp_path / "translated.srt"
+    source.write_text("1\n00:00:00,000 --> 00:01:05,000\nHello world.\n", encoding="utf-8")
+    translated.write_text("1\n00:00:00,000 --> 00:01:05,000\n你好世界。\n", encoding="utf-8")
+    imported = invoke(tmp_path, "subtitles.import/v1", {"sourceSubtitles": {"path": str(source)}, "translatedSubtitles": {"path": str(translated)}}).execute()
+    export = invoke(tmp_path, "media.export/v1", {"video": {"path": str(video)}, "mediaInfo": prepared["outputs"]["mediaInfo"], **imported["outputs"]},
+                    {"outputMode": "subtitles", "targetLanguage": "zh", "chunkMinutes": 1, "keepParts": True})
+    exported = export.execute()
+    assert set(exported["outputs"]) == {"video", "sourceSubtitles", "translatedSubtitles", "part_0001", "part_0002"}
+    durations = []
+    for name in ("part_0001", "part_0002"):
+        assert exported["outputs"][name] == {"$artifact": name}
+        descriptor = exported["artifacts"][name]
+        assert descriptor["schemaId"] == "video/mp4/v1"
+        assert descriptor["mimeType"] == "video/mp4"
+        path = export.work / descriptor["path"]
+        assert path.is_file() and path.name == f"part-{name[-4:]}.mp4"
+        result = subprocess.run([ffprobe_binary(), "-v", "error", "-show_entries", "format=duration", "-of", "json", str(path)], capture_output=True, check=True)
+        durations.append(float(json.loads(result.stdout)["format"]["duration"]))
+    assert durations == [pytest.approx(60.0, abs=0.3), pytest.approx(5.0, abs=0.3)]
+
+
 def test_actual_video_cut_keeps_only_the_clip_range(tmp_path):
     from backend.app.config import ffmpeg_binary, ffprobe_binary
     if not shutil.which(ffmpeg_binary()) or not shutil.which(ffprobe_binary()):
