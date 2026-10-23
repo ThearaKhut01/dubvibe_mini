@@ -473,7 +473,7 @@ def test_chunk_bounds_split_the_timeline_and_window_cues_rebase_for_each_part():
     assert export._window_cues(cues, 5_000, 65_000) == [(0, 5_000, "A"), (54_000, 56_000, "B")]
 
 
-def test_chunked_export_renders_parts_and_joins_the_complete_video(tmp_path):
+def _chunk_export_context(tmp_path, **overrides):
     if not shutil.which(ffmpeg_binary()) or not shutil.which(media.ffprobe_binary()):
         pytest.skip("Local ffmpeg and ffprobe are required for the real export check")
     root = tmp_path / "parts task"
@@ -501,12 +501,17 @@ def test_chunked_export_renders_parts_and_joins_the_complete_video(tmp_path):
         "source_language": "en", "target_language": "zh", "output_mode": "subtitles", "keep_background": False,
         "asr": {"adapter": "whisper", "model": "small", "device": "cpu"},
         "translation": {"adapter": "openai", "model": "test-model", "device": "remote"},
-        "tts": None, "separation": None, "chunk_minutes": 1,
+        "tts": None, "separation": None, "chunk_minutes": 1, **overrides,
     })
-    context = StageContext(task_id="00000000-0000-0000-0000-000000000002", attempt=1,
-                           stage="export", config=config, input_files=files, work_dir=work)
+    return StageContext(task_id="00000000-0000-0000-0000-000000000002", attempt=1,
+                        stage="export", config=config, input_files=files, work_dir=work)
+
+
+def test_chunked_export_renders_parts_and_joins_the_complete_video(tmp_path):
+    context = _chunk_export_context(tmp_path)
+    video = context.input_files["video"]
     messages = []
-    result = export.run(context, lambda value, message: messages.append(message), output_dir=work / "output")
+    result = export.run(context, lambda value, message: messages.append(message), output_dir=context.work_dir / "output")
     assert "Rendering part 1 of 2" in messages
     assert "Rendering part 2 of 2" in messages
     assert messages[-1] == "Output media is ready"
@@ -523,3 +528,17 @@ def test_chunked_export_renders_parts_and_joins_the_complete_video(tmp_path):
 
     # The subtitle spanning the whole video is burned into the joined second part too.
     assert sum(frame(output)) > sum(frame(video)) + 200
+
+
+def test_chunked_export_can_keep_each_part_as_a_separate_output(tmp_path):
+    context = _chunk_export_context(tmp_path, keep_parts=True)
+    result = export.run(context, lambda *_: None, output_dir=context.work_dir / "output")
+    output = result.output_files["video"]
+    parts = {name: path for name, path in result.output_files.items() if name.startswith("part_")}
+    assert sorted(parts) == ["part_0001", "part_0002"]
+    assert all(path.is_file() and path.stat().st_size > 0 for path in parts.values())
+    assert media._duration_ms(media._probe(parts["part_0001"])) == pytest.approx(60_000, abs=300)
+    assert media._duration_ms(media._probe(parts["part_0002"])) == pytest.approx(5_000, abs=300)
+    # The complete video stays the primary output and internal files are gone.
+    assert media._duration_ms(media._probe(output)) == pytest.approx(65_000, abs=300)
+    assert not list(output.parent.glob("part-*.srt"))

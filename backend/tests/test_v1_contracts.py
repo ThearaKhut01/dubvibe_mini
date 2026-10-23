@@ -150,3 +150,14 @@ def test_task_config_accepts_an_optional_render_part_size(config):
     for invalid in (0, -1, 1441, 2.5, "2", True):
         with pytest.raises(ValidationError):
             TaskConfig.model_validate(config | {"chunk_minutes": invalid})
+
+
+def test_task_config_can_keep_render_parts_only_with_a_part_size(config):
+    assert TaskConfig.model_validate(config).keep_parts is False
+    kept = TaskConfig.model_validate(config | {"chunk_minutes": 2, "keep_parts": True})
+    assert kept.chunk_minutes == 2 and kept.keep_parts is True
+    assert TaskConfig.model_validate(config | {"chunk_minutes": 2, "keep_parts": False}).keep_parts is False
+    with pytest.raises(ValidationError):
+        TaskConfig.model_validate(config | {"keep_parts": True})
+    with pytest.raises(ValidationError):
+        TaskConfig.model_validate(config | {"chunk_minutes": 2, "keep_parts": "yes"})

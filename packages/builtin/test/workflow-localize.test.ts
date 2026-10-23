@@ -26,6 +26,7 @@ test('localize requires available media tools before accepting any output mode',
   const defaults = ctx.catalog.describe().workflows[0].defaults
   assert.equal(defaults.asr.adapter, 'asr')
   assert.equal(defaults.translation.adapter, 'translation')
+  assert.equal(defaults.keep_parts, false)
   const select = (adapter: string) => ({ adapter, model: 'test', device: 'cpu' })
   for (const output_mode of ['subtitles', 'dubbing', 'both']) {
     const config = { source_language: 'en', target_language: 'zh', output_mode, keep_background: false, asr: select('asr'), translation: select('translation'), tts: output_mode === 'subtitles' ? null : { ...select('tts'), voice: { mode: 'source_clone' } }, separation: output_mode === 'subtitles' ? null : select('separation') }
@@ -67,6 +68,11 @@ test('localize config accepts the optional translation fallback chain from saved
   assert.equal(assertValid({ ...base, chunk_minutes: 2 }), true)
   assert.equal(assertValid({ ...base, chunk_minutes: 1440 }), true)
   for (const chunk_minutes of [0, -1, 1441, 2.5, '2']) assert.equal(assertValid({ ...base, chunk_minutes }), false)
+  // Kept parts are a boolean option that only matters with a part length.
+  assert.equal(assertValid({ ...base, chunk_minutes: 2, keep_parts: true }), true)
+  assert.equal(assertValid({ ...base, chunk_minutes: 2, keep_parts: false }), true)
+  assert.equal(assertValid({ ...base, keep_parts: true }), true)
+  assert.equal(assertValid({ ...base, keep_parts: 'yes' }), false)
 })
 
 test('localize cuts the requested clip before prepare and export', async t => {
@@ -112,4 +118,10 @@ test('localize cuts the requested clip before prepare and export', async t => {
   const diagnostics = await workflow.validate(inputs, { ...base, trim: { start_ms: 2000, end_ms: 2000 } }, ctx.catalog)
   assert.deepEqual(diagnostics.map(item => item.field), ['trim'])
   assert.deepEqual(await workflow.validate(inputs, base, ctx.catalog), [])
+  // Keeping parts adds one wildcard final output after the complete video.
+  const kept = await workflow.plan(inputs, { ...base, chunk_minutes: 2, keep_parts: true }, ctx.catalog)
+  assert.equal(kept.outputs[0].id, 'video')
+  assert.deepEqual(kept.outputs.at(-1), { id: 'parts', label: 'Part', role: 'parts', source: { stepId: 'export', output: '*' }, required: false })
+  assert.ok(!(await workflow.plan(inputs, { ...base, chunk_minutes: 2 }, ctx.catalog)).outputs.some(output => output.id === 'parts'))
+  assert.ok((await workflow.validate(inputs, { ...base, keep_parts: true }, ctx.catalog)).some(item => item.field === 'keep_parts'))
 })

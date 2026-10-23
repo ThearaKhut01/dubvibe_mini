@@ -81,6 +81,7 @@ class Operation:
             keep_background=self.option("keepBackground", "keep_background", False),
             max_completion_tokens=self.option("maxCompletionTokens", "max_completion_tokens", 65535),
             chunk_minutes=self.option("chunkMinutes", "chunk_minutes", None),
+            keep_parts=self.option("keepParts", "keep_parts", False),
             record_raw=True,
             asr=selection("asr", "whisper"), translation=selection("translation", "openai"),
             tts=selection("tts", "voxcpm"), separation=selection("separation", "demucs"),
@@ -286,8 +287,12 @@ class Operation:
         names = {"source_subtitles": "sourceSubtitles", "translated_subtitles": "translatedSubtitles"}
         outputs = {}
         for name, path in result.output_files.items():
-            port = names.get(name, name)
-            mime = {"video": "video/mp4", "audio": "audio/wav"}.get(name, "application/x-subrip")
+            # Kept render parts are video artifacts just like the joined video.
+            if name.startswith("part_"):
+                port, mime = name, "video/mp4"
+            else:
+                port = names.get(name, name)
+                mime = {"video": "video/mp4", "audio": "audio/wav"}.get(name, "application/x-subrip")
             outputs[port] = self.artifact(port, path, mime + "/v1", mime)
         return outputs
 

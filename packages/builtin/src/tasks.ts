@@ -111,7 +111,8 @@ export default class Tasks extends Service implements TasksService {
     const outputIds = new Set<string>()
     for (const output of plan.outputs) {
       const step = plan.steps.find(item => item.id === output.source.stepId)
-      if (outputIds.has(output.id) || !step?.outputs.some(port => port.name === output.source.output && port.kind === 'artifact')) throw new AppError('INVALID_PLAN', 'Final outputs must select unique artifact ports.', 422)
+      const wildcard = output.source.output === '*'
+      if (outputIds.has(output.id) || !step?.outputs.some(port => port.kind === 'artifact' && (wildcard || port.name === output.source.output))) throw new AppError('INVALID_PLAN', 'Final outputs must select unique artifact ports.', 422)
       outputIds.add(output.id)
     }
   }
@@ -377,7 +378,21 @@ export default class Tasks extends Service implements TasksService {
         if (task.steps.every(step => step.status === 'completed')) {
           task.outputs = []
           for (const output of task.plan.outputs) {
-            const artifact = task.steps.find(step => step.id === output.source.stepId)!.outputs[output.source.output]
+            const step = task.steps.find(step => step.id === output.source.stepId)!
+            // A wildcard output expands to every artifact from the step that a
+            // previous final output did not already select, in declaration order.
+            if (output.source.output === '*') {
+              let index = 0
+              for (const artifact of Object.values(step.outputs)) {
+                const registered = ref(artifact) ? task.artifacts[artifact.id] : undefined
+                if (!registered || task.outputs.some(item => item.artifact.id === artifact.id)) continue
+                if (registered.schemaId !== artifact.schemaId) throw new AppError('INVALID_PROVIDER_RESULT', 'Final output schema differs from its registration.', 500)
+                await this.ctx.files.resolve(task.id, registered)
+                task.outputs.push({ id: `${output.id}-${++index}`, label: `${output.label} ${index}`, role: output.role, artifact })
+              }
+              continue
+            }
+            const artifact = step.outputs[output.source.output]
             if (!artifact) { if (output.required) throw new AppError('STAGE_OUTPUT_MISSING', `Missing final output ${output.id}.`, 500); continue }
             if (!ref(artifact) || !task.artifacts[artifact.id]) throw new AppError('INVALID_PROVIDER_RESULT', 'Final output is not a registered artifact.', 500)
             if (task.artifacts[artifact.id].schemaId !== artifact.schemaId) throw new AppError('INVALID_PROVIDER_RESULT', 'Final output schema differs from its registration.', 500)

@@ -27,6 +27,7 @@ export const localizeSchema: JsonObject = {
     ] } })),
     separation: nullable(selection()), subtitle_alignment: nullable(selection()),
     chunk_minutes: nullable({ type: 'integer', minimum: 1, maximum: 1440 }),
+    keep_parts: { type: 'boolean' },
     trim: nullable({ type: 'object', additionalProperties: false, required: ['start_ms', 'end_ms'],
       properties: { start_ms: { type: 'integer', minimum: 0 }, end_ms: { type: 'integer', minimum: 1 } } }),
   },
@@ -42,7 +43,7 @@ export async function apply(ctx: Context, plugin: { integrity: string; version?:
   }
   // Khmer is the product's default target language for fresh installations;
   // this legacy fallback was silent Chinese and overrode the UI default.
-  const defaults = () => settings.defaults ?? { source_language: 'auto', target_language: 'km', output_mode: 'subtitles', keep_background: false, asr: first('asr'), translation: first('translation'), tts: null, separation: null, subtitle_alignment: null, trim: null, chunk_minutes: null }
+  const defaults = () => settings.defaults ?? { source_language: 'auto', target_language: 'km', output_mode: 'subtitles', keep_background: false, asr: first('asr'), translation: first('translation'), tts: null, separation: null, subtitle_alignment: null, trim: null, chunk_minutes: null, keep_parts: false }
   const pick = (kind: string, config: JsonObject, catalog: CatalogService) => catalog.listProviders().find(item => item.capability === kind && (item.adapter ?? item.id) === config[kind]?.adapter)
   const workflow: WorkflowDefinition = {
     id: 'youdub.localize', version, pluginId, pluginVersion: version, integrity: plugin.integrity,
@@ -72,6 +73,7 @@ export async function apply(ctx: Context, plugin: { integrity: string; version?:
       }
       const needsSeparation = config.keep_background || config.tts?.voice?.mode === 'source_clone'
       if (needsSeparation !== Boolean(config.separation)) fail('Separation must match the background and voice requirements.', 'separation')
+      if (config.keep_parts && config.chunk_minutes == null) fail('Keeping part files requires a part length.', 'keep_parts')
       const connections = (await ctx.settings.read()).connections
       for (const kind of ['asr', 'translation', 'tts', 'separation', 'subtitle_alignment']) {
         const selection = config[kind]; if (!selection) continue
@@ -129,10 +131,13 @@ export async function apply(ctx: Context, plugin: { integrity: string; version?:
         else plan.omittedSteps!.push({ id: 'align', reason: 'Model subtitle alignment is disabled.' })
       }
       add('export', 'media', { video, mediaInfo: step('prepare', 'mediaInfo'), transcript: step('recognize', 'transcript'), translation: step('translate', 'translation'), ...(config.tts ? { finalAudio: step('mix', 'finalAudio'), dubbedTimeline: step('mix', 'dubbedTimeline') } : {}), ...(config.subtitle_alignment ? { wordAlignment: step('align', 'wordAlignment') } : {}) })
-      const final = (id: string, output: string, label: string) => plan.outputs.push({ id, label, role: id, source: { stepId: 'export', output }, required: true })
+      const final = (id: string, output: string, label: string, required = true) => plan.outputs.push({ id, label, role: id, source: { stepId: 'export', output }, required })
       final('video', 'video', 'Video')
       if (config.output_mode !== 'subtitles') final('audio', 'audio', 'Dubbed audio')
       if (config.output_mode !== 'dubbing') { final('source_subtitles', 'sourceSubtitles', 'Source subtitles'); final('translated_subtitles', 'translatedSubtitles', 'Translated subtitles') }
+      // A wildcard exposes each kept render part as its own final output. The
+      // joined video above stays first, so players keep opening the full video.
+      if (config.keep_parts && config.chunk_minutes) final('parts', '*', 'Part', false)
       return plan
     },
   }

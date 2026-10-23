@@ -87,7 +87,7 @@ it("主页只显示三个基础选项，切换输出后保留设置中的模型�
   const defaults: TaskConfig = { ...testConfig, output_mode: "both", keep_background: true,
     asr: { ...testConfig.asr, initial_prompt: "Saved hint" },
     tts: { adapter: "test_tts", model: "configured-tts", device: "cpu", voice: { mode: "preset", id: "voice" } },
-    separation: { adapter: "test_separation", model: "separation", device: "cpu" }, subtitle_alignment: qwenSelection }
+    separation: { adapter: "test_separation", model: "separation", device: "cpu" }, subtitle_alignment: qwenSelection, keep_parts: false }
   const changed = vi.fn()
   function Options() {
     const [value, setValue] = useState(defaults)
@@ -108,7 +108,7 @@ it("主页只显示三个基础选项，切换输出后保留设置中的模型�
 
 it("首次配置允许空模型目录，已有模型选择不会被替换", () => {
   const runtime = testRuntime()
-  expect(initialTaskConfig(runtime, testConfig)).toEqual({ subtitle_alignment: null, trim: null, chunk_minutes: null, ...testConfig })
+  expect(initialTaskConfig(runtime, testConfig)).toEqual({ subtitle_alignment: null, trim: null, chunk_minutes: null, keep_parts: false, ...testConfig })
   expect(initialTaskConfig({ devices: [], capabilities: [] })).toMatchObject({ asr: { adapter: '', model: '', device: 'cpu' }, translation: { adapter: '', model: '', device: 'cpu' } })
 })
 
@@ -121,15 +121,30 @@ it("首页可以选择分段渲染整段视频", async () => {
   render(<LanguageProvider><Options /></LanguageProvider>)
   const user = userEvent.setup()
   expect(screen.getByLabelText('Render parts')).toBeInTheDocument()
+  expect(screen.queryByLabelText('Keep parts')).not.toBeInTheDocument()
   await user.click(screen.getByLabelText('Render parts'))
   await user.click(await screen.findByRole('option', { name: '2 min' }))
-  expect(changed.mock.calls.at(-1)![0]).toMatchObject({ chunk_minutes: 2 })
+  expect(changed.mock.calls.at(-1)![0]).toMatchObject({ chunk_minutes: 2, keep_parts: false })
+  await user.click(screen.getByLabelText('Keep parts'))
+  expect(changed.mock.calls.at(-1)![0]).toMatchObject({ chunk_minutes: 2, keep_parts: true })
   await user.click(screen.getByLabelText('Render parts'))
   await user.click(await screen.findByRole('option', { name: 'Whole video' }))
-  expect(changed.mock.calls.at(-1)![0]).toMatchObject({ chunk_minutes: null })
+  expect(changed.mock.calls.at(-1)![0]).toMatchObject({ chunk_minutes: null, keep_parts: false })
 })
 
 describe("本地化任务配置", () => {
+  it("设置中分段渲染可以保留每个分段文件", async () => {
+    const onChange = mount(testRuntime())
+    const user = userEvent.setup()
+    expect(screen.queryByRole("switch", { name: "Keep part files" })).not.toBeInTheDocument()
+    await choose(user, "Render parts Part length", "2 min")
+    expect(screen.getByRole("switch", { name: "Keep part files" })).toBeInTheDocument()
+    await user.click(screen.getByRole("switch", { name: "Keep part files" }))
+    expect(onChange.mock.calls.at(-1)![0]).toMatchObject({ chunk_minutes: 2, keep_parts: true })
+    await choose(user, "Render parts Part length", "Whole video")
+    expect(onChange.mock.calls.at(-1)![0]).toMatchObject({ chunk_minutes: null, keep_parts: false })
+  })
+
   it("仅配音和字幕模式显示 Qwen 时间选择，退出该模式清除选择", async () => {
     const runtime = runtimeWithQwen()
     const onChange = mount(runtime)

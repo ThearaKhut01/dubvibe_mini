@@ -1,7 +1,7 @@
 "use client"
 
 import { useState, type ReactNode } from "react"
-import { ArrowRightLeft, AudioWaveform, Captions, Clapperboard, Languages, Layers, Mic, Speech, type LucideIcon } from "lucide-react"
+import { ArrowRightLeft, AudioWaveform, Captions, Check, Clapperboard, Languages, Layers, Mic, Speech, type LucideIcon } from "lucide-react"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Segmented } from "@/components/ui/segmented"
@@ -73,6 +73,10 @@ function firstTts(runtime: Runtime, target: string): TtsSelection {
 }
 
 function normalize(config: TaskConfig, runtime: Runtime): TaskConfig {
+  // Keeping parts only means something while rendering parts; choosing the
+  // whole video clears the stale choice in the same update.
+  const keepParts = config.chunk_minutes != null && Boolean(config.keep_parts)
+  if (keepParts !== config.keep_parts) config = { ...config, keep_parts: keepParts }
   if (config.output_mode === "subtitles") return { ...config, keep_background: false, tts: null, separation: null, subtitle_alignment: null }
   const tts = config.tts ?? firstTts(runtime, config.target_language)
   const needsSeparation = config.keep_background || tts.voice.mode === "source_clone"
@@ -104,7 +108,7 @@ function defaultTargetLanguage() {
 export function initialTaskConfig(runtime: Runtime, defaults?: Partial<TaskConfig> | null): TaskConfig {
   return {
     source_language: "auto", target_language: defaultTargetLanguage(), output_mode: "subtitles", keep_background: false,
-    tts: null, separation: null, subtitle_alignment: null, trim: null, chunk_minutes: null,
+    tts: null, separation: null, subtitle_alignment: null, trim: null, chunk_minutes: null, keep_parts: false,
     ...defaults,
     asr: defaults?.asr ?? firstSelection(runtime, "asr"),
     translation: defaults?.translation ?? firstSelection(runtime, "translation"),
@@ -149,7 +153,7 @@ export function TaskOptions({ value, runtime, onChange }: {
       </SelectTrigger>
       <SelectContent>{field.options.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
     </Select>
-  ))}<PartsFields value={value.chunk_minutes ?? null} onChange={(chunk_minutes) => change({ chunk_minutes })} compact />{fields.some((field) => field.hint) && <p className="text-xs text-status-warning-fg">{fields.find((field) => field.hint)!.hint}</p>}</div>
+  ))}<PartsFields value={value.chunk_minutes ?? null} keep={Boolean(value.keep_parts)} onChange={(chunk_minutes) => change({ chunk_minutes })} onKeepChange={(keep_parts) => change({ keep_parts })} compact />{fields.some((field) => field.hint) && <p className="text-xs text-status-warning-fg">{fields.find((field) => field.hint)!.hint}</p>}</div>
 }
 
 const ADAPTER_NAMES: Record<string, [string, string, string?]> = {
@@ -274,9 +278,11 @@ const WHOLE_VIDEO = "whole"
 const PART_MINUTES = Array.from({ length: 60 }, (_, index) => index + 1)
 
 // Long videos are rendered in short parts and joined into one complete video,
-// which keeps every FFmpeg call small and the progress steady.
-function PartsFields({ value, onChange, compact = false }: {
-  value: number | null; onChange: (value: number | null) => void; compact?: boolean
+// which keeps every FFmpeg call small and the progress steady. Kept parts are
+// saved next to the complete video and appear in Generated files.
+function PartsFields({ value, keep, onChange, onKeepChange, compact = false }: {
+  value: number | null; keep: boolean; onChange: (value: number | null) => void
+  onKeepChange: (value: boolean) => void; compact?: boolean
 }) {
   const text = useText()
   const options = [
@@ -286,17 +292,34 @@ function PartsFields({ value, onChange, compact = false }: {
   const current = value ? String(value) : WHOLE_VIDEO
   const display = value ? `${value} ${text("min", "分钟", "នាទី")}` : text("Whole video", "完整视频", "វីដេអូទាំងមូល")
   const set = (next: string) => onChange(next === WHOLE_VIDEO ? null : Number(next))
-  if (compact) return <Select value={current} onValueChange={(next) => { if (typeof next === "string") set(next) }}>
-    <SelectTrigger aria-label={text("Render parts", "分段渲染", "ដំណើរការជាផ្នែកៗ")} className="inline-flex h-8 w-auto max-w-full gap-1.5 rounded-full border-border bg-muted px-3 text-[13px] shadow-none hover:bg-accent">
-      <Layers className="size-3.5 text-subtle-foreground" />
-      <span className="text-subtle-foreground">{text("Parts", "分段", "ផ្នែក")}</span>
-      <span className="min-w-0 truncate font-medium">{display}</span>
-    </SelectTrigger>
-    <SelectContent>{options.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
-  </Select>
-  return <Field id="part-length" caption={text("Part length", "分段时长", "ប្រវែងផ្នែក")} srPrefix={text("Render parts ", "分段渲染", "ដំណើរការជាផ្នែកៗ ")}>
-    <FieldSelect id="part-length" value={current} display={display} placeholder={display} options={options} onChange={set} />
-  </Field>
+  const keepLabel = text("Keep parts", "保留分段", "រក្សាទុកផ្នែក")
+  if (compact) return <>
+    <Select value={current} onValueChange={(next) => { if (typeof next === "string") set(next) }}>
+      <SelectTrigger aria-label={text("Render parts", "分段渲染", "ដំណើរការជាផ្នែកៗ")} className="inline-flex h-8 w-auto max-w-full gap-1.5 rounded-full border-border bg-muted px-3 text-[13px] shadow-none hover:bg-accent">
+        <Layers className="size-3.5 text-subtle-foreground" />
+        <span className="text-subtle-foreground">{text("Parts", "分段", "ផ្នែក")}</span>
+        <span className="min-w-0 truncate font-medium">{display}</span>
+      </SelectTrigger>
+      <SelectContent>{options.map((option) => <SelectItem key={option.value} value={option.value}>{option.label}</SelectItem>)}</SelectContent>
+    </Select>
+    {value !== null && <button type="button" aria-label={keepLabel} aria-pressed={keep} onClick={() => onKeepChange(!keep)}
+      className={cn("inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-[13px] font-medium",
+        keep ? "border-primary/40 bg-primary/10 text-primary" : "border-border bg-muted text-subtle-foreground hover:bg-accent")}>
+      <Check className="size-3.5" />{keepLabel}
+    </button>}
+  </>
+  return <div className="space-y-2">
+    <Field id="part-length" caption={text("Part length", "分段时长", "ប្រវែងផ្នែក")} srPrefix={text("Render parts ", "分段渲染", "ដំណើរការជាផ្នែកៗ ")}>
+      <FieldSelect id="part-length" value={current} display={display} placeholder={display} options={options} onChange={set} />
+    </Field>
+    {value !== null && <label className="flex cursor-pointer items-start justify-between gap-3 rounded-lg border border-input bg-input-bg px-3 py-2 text-sm">
+      <span>
+        <span id="keep-parts-label" className="block font-medium">{text("Keep part files", "保留分段文件", "រក្សាទុកឯកសារផ្នែក")}</span>
+        <span className="mt-0.5 block text-xs text-muted-foreground">{text("Save each part as its own video in Generated files, in addition to the complete video.", "每个分段也会保存为单独的视频文件，与完整视频一起显示。", "រក្សាទុកផ្នែកនីមួយៗជាវីដេអូដោយឡែកក្នុងឯកសារដែលបានបង្កើត បន្ថែមលើវីដេអូពេញលេញ។")}</span>
+      </span>
+      <Switch aria-labelledby="keep-parts-label" checked={keep} onCheckedChange={onKeepChange} />
+    </label>}
+  </div>
 }
 
 export function TaskConfigForm({ value, runtime, onChange }: {
@@ -331,8 +354,8 @@ export function TaskConfigForm({ value, runtime, onChange }: {
       </ConfigRow>
 
     <ConfigRow icon={Layers} tint="teal" title={text("Render parts", "分段渲染", "ដំណើរការជាផ្នែកៗ")}
-      description={text("The video is rendered in short parts and joined back into one complete video. Short parts use less memory and finish faster.", "视频分段渲染，再合并成一个完整视频。分段更省内存，也能更快完成。", "វីដេអូត្រូវបង្កើតជាផ្នែកខ្លីៗ រួចបញ្ចូលគ្នាជាវីដេអូពេញលេញ។ ផ្នែកខ្លីៗប្រើអង្គចងចាំតិច និងបញ្ចប់លឿនជាង។")}>
-      <PartsFields value={value.chunk_minutes ?? null} onChange={(chunk_minutes) => change({ chunk_minutes })} />
+      description={text("The video is rendered in short parts and joined back into one complete video. You can also keep each part as a separate file.", "视频分段渲染，再合并成一个完整视频。也可以把每个分段保留为单独的文件。", "វីដេអូត្រូវបង្កើតជាផ្នែកខ្លីៗ រួចបញ្ចូលគ្នាជាវីដេអូពេញលេញ។ អ្នកក៏អាចរក្សាទុកផ្នែកនីមួយៗជាឯកសារដោយឡែកបានដែរ។")}>
+      <PartsFields value={value.chunk_minutes ?? null} keep={Boolean(value.keep_parts)} onChange={(chunk_minutes) => change({ chunk_minutes })} onKeepChange={(keep_parts) => change({ keep_parts })} />
     </ConfigRow>
 
     <ConfigRow icon={Mic} tint="blue" title={text("Speech recognition", "语音识别", "\u1780\u17B6\u179A\u179F\u1798\u17D2\u1782\u17B6\u179B\u17CB\u179F\u17C6\u17A1\u17C1\u1784")}

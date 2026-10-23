@@ -38,9 +38,17 @@ async function setup(t: any, contract: 'artifact' | 'json' | 'omitted' | 'downgr
   const ports = stepIds.length > 1 ? [output, nested] : [output]
   const executed: { taskId: string; stepId: string }[] = []
   let previous: InvocationContext | undefined
-  const write = async (workDir: string, context: InvocationContext) => {
+  const write = async (workDir: string, context: InvocationContext, mode?: string) => {
     await writeFile(join(workDir, 'result.txt'), 'real task output', { flag: 'wx' })
     const file = await context.register({ path: 'result.txt', mimeType: 'text/plain', schemaId: 'file/v1' })
+    if (mode === 'parts') {
+      const parts: Record<string, any> = {}
+      for (const index of [1, 2]) {
+        await writeFile(join(workDir, `part-${index}.txt`), `part ${index}`, { flag: 'wx' })
+        parts[`part_${index}`] = await context.register({ path: `part-${index}.txt`, mimeType: 'text/plain', schemaId: 'file/v1' })
+      }
+      return { state: 'completed' as const, outputs: { file, ...parts } }
+    }
     return { state: 'completed' as const, outputs: { file, ...(stepIds.length > 1 ? { nested: { files: [file] } } : {}) } }
   }
   const provider: OperationProvider = {
@@ -75,15 +83,19 @@ async function setup(t: any, contract: 'artifact' | 'json' | 'omitted' | 'downgr
         previous = context
         return ctx.process.worker({ command: process.execPath, args: ['-e', `process.stdin.once('data',raw=>{const m=JSON.parse(raw);process.stdout.write(JSON.stringify({version:m.version,invocationId:m.invocationId,seq:1,type:'progress',payload:{value:0.1,message:'child running'}})+'\\n');setInterval(()=>{},1000);});`] }, request, context)
       }
-      return write(request.workDir, context)
+      return write(request.workDir, context, request.config.mode)
     },
     async poll(operation, context) { return write(operation.workDir, context) },
   }
   const workflow: WorkflowDefinition = {
     id: 'test.workflow', version: '1.0.0', ...identity,
-    describe: () => ({ id: 'test.workflow', version: '1.0.0', label: 'Test workflow', inputs: [], defaults: { mode: 'text' }, configSchema: { type: 'object', required: ['mode'], properties: { mode: { enum: ['text', 'wait', 'wait-offset', 'bad', 'cancel', 'bad-json', 'deleted', 'forged', 'unknown'] } }, additionalProperties: false } }),
+    describe: () => ({ id: 'test.workflow', version: '1.0.0', label: 'Test workflow', inputs: [], defaults: { mode: 'text' }, configSchema: { type: 'object', required: ['mode'], properties: { mode: { enum: ['text', 'wait', 'wait-offset', 'bad', 'cancel', 'bad-json', 'deleted', 'forged', 'unknown', 'parts'] } }, additionalProperties: false } }),
     validate: () => [],
-    plan: (_, config) => ({ workflow: { id: 'test.workflow', version: '1.0.0', ...identity }, config, bindings: { main: { providerId: provider.id, ...identity, modelRevision: null, options: {} } }, steps: stepIds.map((id, index) => ({ id, label: id, bindingKey: 'main', operation: 'test/v1', input: index ? { previous: { from: 'step', stepId: stepIds[index - 1], output: 'file' }, nested: { from: 'step', stepId: stepIds[index - 1], output: 'nested' } } : {}, outputs: contract === 'omitted' ? [] : ports.map(port => ({ ...port, required: contract !== 'downgraded' })) })), outputs: contract === 'json' || contract === 'omitted' ? [] : [{ id: 'file', label: 'File', role: 'file', source: { stepId: stepIds.at(-1)!, output: 'file' }, required: true }] }),
+    plan: (_, config) => {
+      const outputs = contract === 'json' || contract === 'omitted' ? [] : [{ id: 'file', label: 'File', role: 'file', source: { stepId: stepIds.at(-1)!, output: 'file' }, required: true }]
+      if (config.mode === 'parts') outputs.push({ id: 'parts', label: 'Part', role: 'part', source: { stepId: stepIds.at(-1)!, output: '*' }, required: false })
+      return { workflow: { id: 'test.workflow', version: '1.0.0', ...identity }, config, bindings: { main: { providerId: provider.id, ...identity, modelRevision: null, options: {} } }, steps: stepIds.map((id, index) => ({ id, label: id, bindingKey: 'main', operation: 'test/v1', input: index ? { previous: { from: 'step', stepId: stepIds[index - 1], output: 'file' }, nested: { from: 'step', stepId: stepIds[index - 1], output: 'nested' } } : {}, outputs: contract === 'omitted' ? [] : ports.map(port => ({ ...port, required: contract !== 'downgraded' })) })), outputs }
+    },
   }
   fibers.push(await ctx.plugin({ inject: ['catalog'], apply(context) { context.effect(() => context.catalog.registerProvider(provider)); context.effect(() => context.catalog.registerWorkflow(workflow)) } }))
   const create = async (mode: string) => {
@@ -112,6 +124,17 @@ test('real SQLite task engine keeps the execution slot during waiting and resume
   assert.equal((await ctx.tasks.record(first.id)).steps[0]?.invocationId, waiting.steps[0]?.invocationId)
   const completed = await until(second.id, task => task.status === 'succeeded')
   assert.deepEqual(completed.outputs, [{ id: 'file', label: 'File', role: 'file', name: 'result.txt', mimeType: 'text/plain', size: 16 }])
+})
+
+test('wildcard final outputs expand every extra artifact from their step', async t => {
+  const { create, until } = await setup(t)
+  const task = await create('parts')
+  const done = await until(task.id, state => state.status === 'succeeded')
+  assert.deepEqual(done.outputs.map(output => [output.id, output.label, output.name, output.role]), [
+    ['file', 'File', 'result.txt', 'file'],
+    ['parts-1', 'Part 1', 'part-1.txt', 'part'],
+    ['parts-2', 'Part 2', 'part-2.txt', 'part'],
+  ])
 })
 
 test('real task cancellation, explicit retry, and stale progress/CAS cannot overwrite the new attempt', async t => {

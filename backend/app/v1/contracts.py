@@ -102,6 +102,8 @@ class TaskConfig(Contract):
     trim: TrimRange | None = None
     # Render the output video in parts of this many minutes, then join them.
     chunk_minutes: Annotated[int, Field(ge=1, le=1440)] | None = None
+    # Keep each rendered part as a separate output in addition to the joined video.
+    keep_parts: bool = False
 
     @model_validator(mode="after")
     def validate_pipeline(self) -> Self:
@@ -123,6 +125,8 @@ class TaskConfig(Contract):
             raise ValueError("background preservation and source cloning require separation")
         if not needs_separation and self.separation is not None:
             raise ValueError("separation must be null when it is not used")
+        if self.keep_parts and self.chunk_minutes is None:
+            raise ValueError("keep_parts requires chunk_minutes")
         return self
 
 

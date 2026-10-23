@@ -298,6 +298,7 @@ def run(context: StageContext, progress: Callable[[float | None, str], None], *,
     # Rendering in short parts keeps each FFmpeg call small (steady progress,
     # lower memory) and joins the encoded parts into one complete video.
     chunk = getattr(context.config, "chunk_minutes", None)
+    keep_parts = bool(getattr(context.config, "keep_parts", False))
     bounds = (chunk_bounds(info["duration_ms"], chunk * 60_000)
               if type(chunk) is int and chunk > 0 and info["duration_ms"] > chunk * 60_000 else None)
     if bounds:
@@ -327,7 +328,12 @@ def run(context: StageContext, progress: Callable[[float | None, str], None], *,
         # encoder padding at part boundaries cannot produce invalid timestamps.
         render(base + ["-f", "concat", "-safe", "0", "-i", str(listing), "-c:v", "copy", "-c:a", "aac",
                        "-movflags", "+faststart", str(final_video.resolve())])
-        for path in [*parts, listing, *(output / f"part-{index:04d}.srt" for index in range(1, len(bounds) + 1))]:
+        # Optionally keep every rendered part as its own output, in addition to
+        # the joined video; the internal listing and part SRTs are always removed.
+        if keep_parts:
+            outputs.update({f"part_{index:04d}": part for index, part in enumerate(parts, 1)})
+        for path in ([] if keep_parts else parts) + [listing, *(
+                output / f"part-{index:04d}.srt" for index in range(1, len(bounds) + 1))]:
             path.unlink(missing_ok=True)
     else:
         command = base + ["-i", str(video.resolve())]
