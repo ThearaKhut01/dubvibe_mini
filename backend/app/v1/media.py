@@ -19,6 +19,13 @@ def _invalid(message: str) -> ApiError:
     return ApiError(422, "INVALID_MEDIA", message, field="file", stage="prepare", action="none")
 
 
+# Muxing noise routinely shifts one stream by tens of milliseconds (AAC encoder
+# delay, MP4 edit lists, a first video PTS one frame in). Only drift beyond
+# perception indicates a genuinely delayed track, whose leading gap the audio
+# extraction would drop and shift every subtitle against the picture.
+MAX_STREAM_START_DRIFT_MS = 250
+
+
 def _run_media(
     command: list[str], *, check_cancel: Callable[[], None] | None = None, timeout: float | None = None,
     cwd: Path | None = None,
@@ -129,8 +136,10 @@ def inspect_video(
     if audio is None:
         raise ApiError(422, "NO_AUDIO_TRACK", "The input video has no audio track.",
                        field="file", stage="prepare", action="none")
-    if _stream_start_ms(video) != _stream_start_ms(audio):
-        raise ApiError(415, "UNSUPPORTED_MEDIA", "Different video and audio start times are not supported.",
+    drift_ms = abs(_stream_start_ms(video) - _stream_start_ms(audio))
+    if drift_ms > MAX_STREAM_START_DRIFT_MS:
+        raise ApiError(415, "UNSUPPORTED_MEDIA",
+                       f"Video and audio start times differ by {drift_ms} ms (over the supported {MAX_STREAM_START_DRIFT_MS} ms drift); the audio track is genuinely delayed.",
                        field="file", stage="prepare", action="none")
     width, height = video.get("width"), video.get("height")
     frame_rate = _positive_number(video.get("avg_frame_rate")) or _positive_number(video.get("r_frame_rate"))

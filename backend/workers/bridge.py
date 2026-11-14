@@ -116,9 +116,12 @@ class Bridge:
             from backend.app.v1.runtime import runtime_info
             return runtime_info()
         if method == "runtime.probe":
-            from backend.app.v1.runtime import probe_capability
+            from backend.app.v1.runtime import TRANSLATION_ADAPTERS, probe_capability
             adapter = params["adapter"]
-            if adapter == "openai":
+            # Every remote translation adapter needs the saved connections; the
+            # openai-only special case left gemini/codecraft/custom reporting
+            # "Provider connection is not configured." despite a saved key.
+            if adapter in TRANSLATION_ADAPTERS:
                 settings = self.settings()
                 model = ((settings.get("defaults") or {}).get("translation") or {}).get("model")
                 return probe_capability(adapter, connections=settings["connections"], translation_model=model)

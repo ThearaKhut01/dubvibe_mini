@@ -11,7 +11,7 @@ import type { Runtime, TaskConfig } from '@/plugin/builtin/localize-contracts'
 type Settings = { connections: { adapter: string; base_url: string; has_api_key: boolean }[]; defaults?: TaskConfig | null; plugins?: Record<string, { translationDeferred?: boolean }> }
 const PROVIDERS: { id: string; label: string; url: string; modelHint: string }[] = [
   { id: 'openai', label: 'OpenAI', url: 'https://api.openai.com/v1', modelHint: 'gpt-4.1-mini' },
-  { id: 'gemini', label: 'Google Gemini', url: 'https://generativelanguage.googleapis.com/v1beta/openai/', modelHint: 'gemini-2.5-flash' },
+  { id: 'gemini', label: 'Google Gemini', url: 'https://generativelanguage.googleapis.com/v1beta/openai/', modelHint: 'gemini-flash-latest' },
   { id: 'codecraft', label: 'CodeCraft API', url: 'https://codecraftapi.com/v1', modelHint: 'gpt-4.1-mini' },
   { id: 'custom', label: 'Custom API', url: '', modelHint: 'gpt-4.1-mini' },
 ]

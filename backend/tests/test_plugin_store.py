@@ -187,6 +187,17 @@ def test_local_runtime_probe_does_not_read_credentials(tmp_path, monkeypatch):
     assert bridge.call("runtime.probe", {"adapter": "whisper"}) == {"adapter": "whisper"}
 
 
+def test_remote_runtime_probe_sees_saved_connections_beyond_openai(tmp_path, monkeypatch):
+    for name in ("DUBVIBE_MINI_GEMINI_MODELS", "YOUDUB_GEMINI_MODELS"):
+        monkeypatch.delenv(name, raising=False)
+    bridge = Bridge(tmp_path, credentials=Credentials())
+    bridge.call("settings.patch", {"patch": {"connection": {
+        "adapter": "gemini", "base_url": "https://generativelanguage.googleapis.com/v1beta/openai/", "api_key": "gemini-key"}}})
+    result = bridge.call("runtime.probe", {"adapter": "gemini"})
+    assert result["available"] is True and result["requires_api_key"] is True
+    assert [item["id"] for item in result["models"]] == ["gemini-flash-latest", "gemini-flash-lite-latest"]
+
+
 def test_settings_connection_omission_rotation_clear_and_address_binding(tmp_path):
     credentials = Credentials()
     bridge = Bridge(tmp_path, credentials=credentials)

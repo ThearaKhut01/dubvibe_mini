@@ -93,12 +93,25 @@ def test_matching_stream_starts_are_compared_at_millisecond_precision(monkeypatc
     assert media.inspect_video(Path("source.mp4"), RUNTIME_LIMITS)["duration_ms"] == 1001
 
 
-@pytest.mark.parametrize("video_start,audio_start", [("0", "1"), ("0", "0.001"), ("2", "1.999")])
+@pytest.mark.parametrize("video_start,audio_start", [
+    ("0.033333", "0"), ("0", "-0.023"), ("0.1", "0"), ("0", "0.25"),
+])
+def test_small_stream_start_drift_is_accepted(monkeypatch, probe_data, video_start, audio_start):
+    # AAC priming, MP4 edit lists and a first video PTS one frame in shift a
+    # stream by tens of milliseconds in ordinary files; that muxing noise is
+    # not a genuinely delayed track.
+    probe_data["streams"][0]["start_time"] = video_start
+    probe_data["streams"][1]["start_time"] = audio_start
+    monkeypatch.setattr(media, "_probe", lambda path, **kwargs: probe_data)
+    assert media.inspect_video(Path("source.mp4"), RUNTIME_LIMITS)["duration_ms"] == 1001
+
+
+@pytest.mark.parametrize("video_start,audio_start", [("0", "1"), ("0", "0.3"), ("2", "1.5"), ("0", "0.251")])
 def test_different_stream_starts_are_unsupported(monkeypatch, probe_data, video_start, audio_start):
     probe_data["streams"][0]["start_time"] = video_start
     probe_data["streams"][1]["start_time"] = audio_start
     monkeypatch.setattr(media, "_probe", lambda path, **kwargs: probe_data)
-    with pytest.raises(ApiError, match="Different video and audio start times") as error:
+    with pytest.raises(ApiError, match="start times differ by") as error:
         media.inspect_video(Path("source.mp4"), RUNTIME_LIMITS)
     assert error.value.status_code == 415
     assert error.value.content["error"]["code"] == "UNSUPPORTED_MEDIA"
@@ -308,7 +321,7 @@ def delayed_audio(tmp_path):
 def test_real_delayed_audio_is_rejected_before_prepare_extracts_it(tmp_path, delayed_audio):
     source = delayed_audio
     source_hash = hashlib.sha256(source.read_bytes()).digest()
-    with pytest.raises(ApiError, match="Different video and audio start times") as error:
+    with pytest.raises(ApiError, match="start times differ by") as error:
         media.inspect_video(source, RUNTIME_LIMITS)
     assert error.value.content["error"]["code"] == "UNSUPPORTED_MEDIA"
 

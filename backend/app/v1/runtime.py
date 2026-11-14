@@ -113,7 +113,10 @@ TRANSLATION_ADAPTERS = ("openai", "gemini", "codecraft", "custom")
 # DUBVIBE_MINI_* (legacy YOUDUB_* aliases accepted).
 TRANSLATION_MODEL_DEFAULTS = {
     "openai": ("TRANSLATION_MODELS", "gpt-4.1-mini"),
-    "gemini": ("GEMINI_MODELS", "gemini-2.5-flash, gemini-2.5-flash-lite"),
+    # gemini-2.5-* was deprecated (new keys get HTTP 404 ahead of the 2026-12-01
+    # shutdown): use Google's moving aliases, which always resolve to the
+    # current stable Flash / Flash-Lite model.
+    "gemini": ("GEMINI_MODELS", "gemini-flash-latest, gemini-flash-lite-latest"),
     "codecraft": ("CODECRAFT_MODELS", "gpt-5.6-luna, gpt-4.1-mini"),
     "custom": ("TRANSLATION_MODELS", "gpt-4.1-mini"),
 }

@@ -78,7 +78,7 @@ def test_default_models_match_the_service_behind_the_url(monkeypatch):
     # The generic OpenAI default answers HTTP 404 on Google and on aggregators:
     # each known service gets its own candidates and the test walks them on 404.
     assert default_models('https://api.openai.com/v1') == ['gpt-4.1-mini']
-    assert default_models('https://generativelanguage.googleapis.com/v1beta/openai/') == ['gemini-2.5-flash', 'gemini-2.5-flash-lite']
+    assert default_models('https://generativelanguage.googleapis.com/v1beta/openai/') == ['gemini-flash-latest', 'gemini-flash-lite-latest']
     assert default_models('https://codecraftapi.com/v1') == ['gpt-5.6-luna', 'gpt-4.1-mini']
     assert default_models('https://gateway.example/v1') == ['gpt-4.1-mini']
 
@@ -122,7 +122,7 @@ def test_model_not_found_walks_the_service_default_candidates(bridge, monkeypatc
     monkeypatch.setattr(openai, 'OpenAI', lambda **kwargs: client)
     assert check_connection({'base_url': 'https://generativelanguage.googleapis.com/v1beta/openai', 'api_key': 'secret'}, bridge) == {'ok': True}
     models = [call.kwargs['model'] for call in client.chat.completions.create.call_args_list]
-    assert models == ['gemini-2.5-flash', 'gemini-2.5-flash-lite']
+    assert models == ['gemini-flash-latest', 'gemini-flash-lite-latest']
 
 
 def test_all_default_candidates_reported_when_every_model_404s(bridge, monkeypatch):
@@ -136,4 +136,4 @@ def test_all_default_candidates_reported_when_every_model_404s(bridge, monkeypat
     monkeypatch.setattr(openai, 'OpenAI', lambda **kwargs: client)
     with pytest.raises(WorkerError, match='HTTP 404') as result:
         check_connection({'base_url': 'https://generativelanguage.googleapis.com/v1beta/openai', 'api_key': 'secret'}, bridge)
-    assert 'Models tried: "gemini-2.5-flash", "gemini-2.5-flash-lite"' in str(result.value)
+    assert 'Models tried: "gemini-flash-latest", "gemini-flash-lite-latest"' in str(result.value)

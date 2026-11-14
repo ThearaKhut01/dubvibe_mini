@@ -150,7 +150,7 @@ def test_remote_translation_adapters_match_only_their_own_connection(installed_r
         {"adapter": "codecraft", "base_url": "https://craft.example/v1", "has_api_key": True},
         {"adapter": "custom", "base_url": "https://gateway.example/v1", "has_api_key": True},
     ]
-    for adapter, models in (("gemini", ["gemini-2.5-flash", "gemini-2.5-flash-lite"]),
+    for adapter, models in (("gemini", ["gemini-flash-latest", "gemini-flash-lite-latest"]),
                             ("codecraft", ["gpt-5.6-luna", "gpt-4.1-mini"]),
                             ("custom", ["gpt-4.1-mini"])):
         result = runtime.probe_capability(adapter, connections=connections)
